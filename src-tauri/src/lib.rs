@@ -1,0 +1,338 @@
+use std::sync::{Arc, Mutex};
+use tauri::{
+    menu::{MenuBuilder, MenuItemBuilder},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Manager,
+};
+
+mod riot;
+mod discord;
+
+type SharedState = Arc<Mutex<riot::ConnectionState>>;
+type DiscordShared = Arc<Mutex<discord::DiscordState>>;
+
+#[tauri::command]
+async fn connect(state: tauri::State<'_, SharedState>) -> Result<riot::PlayerInfo, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::connect_and_store(&state))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+fn disconnect(state: tauri::State<'_, SharedState>) {
+    riot::disconnect(&state)
+}
+
+#[tauri::command]
+fn get_status(state: tauri::State<'_, SharedState>) -> String {
+    riot::get_status(&state)
+}
+
+#[tauri::command]
+fn get_player(state: tauri::State<'_, SharedState>) -> Option<riot::PlayerInfo> {
+    riot::get_cached_player(&state)
+}
+
+#[tauri::command]
+fn is_valorant_running() -> bool {
+    riot::is_valorant_running()
+}
+
+#[tauri::command]
+async fn health_check(state: tauri::State<'_, SharedState>) -> Result<Option<riot::PlayerInfo>, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || Ok(riot::health_check(&state)))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn check_current_game(state: tauri::State<'_, SharedState>) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::check_current_game(&state))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn select_agent(state: tauri::State<'_, SharedState>, match_id: String, agent_id: String) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::select_agent(&state, &match_id, &agent_id))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn lock_agent(state: tauri::State<'_, SharedState>, match_id: String, agent_id: String) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::lock_agent(&state, &match_id, &agent_id))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn pregame_quit(state: tauri::State<'_, SharedState>, match_id: String) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::pregame_quit(&state, &match_id))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn coregame_quit(state: tauri::State<'_, SharedState>, match_id: String) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::coregame_quit(&state, &match_id))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn get_owned_agents(state: tauri::State<'_, SharedState>) -> Result<Vec<String>, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::get_owned_agents(&state))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn get_party(state: tauri::State<'_, SharedState>) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::get_party(&state))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn get_friends(state: tauri::State<'_, SharedState>) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::get_friends(&state))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn set_party_accessibility(state: tauri::State<'_, SharedState>, open: bool) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::set_party_accessibility(&state, open))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn disable_party_code(state: tauri::State<'_, SharedState>) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::disable_party_code(&state))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn kick_from_party(state: tauri::State<'_, SharedState>, target_puuid: String) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::kick_from_party(&state, &target_puuid))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn generate_party_code(state: tauri::State<'_, SharedState>) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::generate_party_code(&state))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn join_party_by_code(state: tauri::State<'_, SharedState>, code: String) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::join_party_by_code(&state, &code))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn enter_queue(state: tauri::State<'_, SharedState>) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::enter_queue(&state))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn leave_queue(state: tauri::State<'_, SharedState>) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::leave_queue(&state))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn start_discord_rpc(state: tauri::State<'_, DiscordShared>) -> Result<(), String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || discord::start_rpc(&state))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn stop_discord_rpc(state: tauri::State<'_, DiscordShared>) -> Result<(), String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || discord::stop_rpc(&state))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn update_discord_rpc(state: tauri::State<'_, DiscordShared>, details: String, rpc_state: String, large_image: String, large_text: String, small_image: String, small_text: String) -> Result<(), String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || discord::update_rpc(&state, &details, &rpc_state, &large_image, &large_text, &small_image, &small_text))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+fn exit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
+#[tauri::command]
+fn get_token_age(state: tauri::State<'_, SharedState>) -> u64 {
+    riot::get_token_age_secs(&state)
+}
+
+#[tauri::command]
+async fn get_player_mmr(state: tauri::State<'_, SharedState>, target_puuid: String) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::get_player_mmr(&state, &target_puuid))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn resolve_player_names(state: tauri::State<'_, SharedState>, puuids: Vec<String>) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::resolve_player_names(&state, puuids))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn henrik_get_account(puuid: String, api_key: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = format!("/valorant/v1/by-puuid/account/{}", puuid);
+        riot::henrik_api_get(&path, &api_key)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn henrik_get_mmr(puuid: String, region: String, api_key: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = format!("/valorant/v2/by-puuid/mmr/{}/{}", region, puuid);
+        riot::henrik_api_get(&path, &api_key)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+pub fn run() {
+    #[cfg(windows)]
+    {
+        #[link(name = "shell32")]
+        extern "system" {
+            fn SetCurrentProcessExplicitAppUserModelID(app_id: *const u16) -> i32;
+        }
+        let id: Vec<u16> = "com.valorantthing.app\0".encode_utf16().collect();
+        unsafe { SetCurrentProcessExplicitAppUserModelID(id.as_ptr()); }
+    }
+
+    tauri::Builder::default()
+        .manage(Arc::new(Mutex::new(riot::ConnectionState::default())))
+        .manage(Arc::new(Mutex::new(discord::DiscordState::default())))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_shell::init())
+        .setup(|app| {
+            let show_item = MenuItemBuilder::with_id("show", "Show").build(app)?;
+            let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+            let menu = MenuBuilder::new(app)
+                .item(&show_item)
+                .separator()
+                .item(&quit_item)
+                .build()?;
+
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .tooltip("Valorant Thing")
+                .menu(&menu)
+                .on_menu_event(|app, event| {
+                    match event.id().as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            connect,
+            disconnect,
+            get_status,
+            get_player,
+            is_valorant_running,
+            health_check,
+            exit_app,
+            check_current_game,
+            select_agent,
+            lock_agent,
+            pregame_quit,
+            coregame_quit,
+            get_owned_agents,
+            get_token_age,
+            get_player_mmr,
+            resolve_player_names,
+            henrik_get_account,
+            henrik_get_mmr,
+            get_party,
+            get_friends,
+            set_party_accessibility,
+            disable_party_code,
+            kick_from_party,
+            generate_party_code,
+            join_party_by_code,
+            start_discord_rpc,
+            stop_discord_rpc,
+            update_discord_rpc,
+            enter_queue,
+            leave_queue,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+target/
+.windsurf/
+.agents/
+val.md
+*.js.map
