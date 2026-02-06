@@ -12,18 +12,16 @@
   <img src="https://img.shields.io/badge/platform-Windows-blue?style=flat-square" />
   <img src="https://img.shields.io/badge/built%20with-Tauri%20v2-orange?style=flat-square" />
   <img src="https://img.shields.io/badge/frontend-React%2019-61dafb?style=flat-square" />
-  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" />
 </p>
 
 ---
 
 ## Screenshots
 
-> Add your own screenshots here! Drop them in a `/screenshots` folder and reference them like:
-
 ```
 ![Main View](screenshots/main.png)
 ![Match Info](screenshots/match-info.png)
+![Map Dodge](screenshots/map-dodge.png)
 ![Settings](screenshots/settings.png)
 ```
 
@@ -149,7 +147,7 @@ All settings are stored in `localStorage` and persist between sessions:
 | Start Minimized | Off | Launch hidden in tray |
 | Select Delay | 0ms | Delay before agent select |
 | Lock Delay | 0ms | Delay before agent lock |
-| Henrik API Key | — | Optional, for player name resolution |
+| Henrik API Key | - | Optional, for player name resolution |
 
 ---
 
