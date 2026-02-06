@@ -90,6 +90,7 @@ export default function App() {
   const [discordRpc, setDiscordRpc] = useState(() => localStorage.getItem("discord_rpc") !== "false");
   const [startWithWindows, setStartWithWindows] = useState(() => localStorage.getItem("start_with_windows") === "true");
   const [startMinimized, setStartMinimized] = useState(() => localStorage.getItem("start_minimized") === "true");
+  const [minimizeToTray, setMinimizeToTray] = useState(() => localStorage.getItem("minimize_to_tray") === "true");
   const [logs, setLogs] = useState([]);
   const [instalockActive, setInstalockActive] = useState(false);
   const [henrikApiKey, setHenrikApiKey] = useState(() => localStorage.getItem("henrik_api_key") || "");
@@ -500,7 +501,7 @@ export default function App() {
           : "linear-gradient(135deg, transparent 0%, rgb(var(--val-red) / 0.18) 100%), rgb(var(--base-900))"
       } : undefined}
     >
-      <TitleBar simplifiedTheme={simplifiedTheme} />
+      <TitleBar simplifiedTheme={simplifiedTheme} minimizeToTray={minimizeToTray} />
       <div className="flex flex-1 min-h-0">
         <Sidebar
           status={status}
@@ -554,6 +555,8 @@ export default function App() {
               }}
               startMinimized={startMinimized}
               onStartMinimizedChange={(v) => { setStartMinimized(v); localStorage.setItem("start_minimized", String(v)); }}
+              minimizeToTray={minimizeToTray}
+              onMinimizeToTrayChange={(v) => { setMinimizeToTray(v); localStorage.setItem("minimize_to_tray", String(v)); }}
               simplifiedTheme={simplifiedTheme}
               onSimplifiedThemeChange={(v) => { setSimplifiedTheme(v); localStorage.setItem("simplified_theme", String(v)); }}
               customTheme={customTheme}

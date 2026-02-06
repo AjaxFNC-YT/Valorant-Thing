@@ -1,6 +1,6 @@
 {
   "productName": "Valorant Thing",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "identifier": "com.valorantthing.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -38,7 +38,11 @@
     ],
     "windows": {
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "icons/icon.png",
+        "sidebarImage": "icons/icon.png"
       }
     }
   }

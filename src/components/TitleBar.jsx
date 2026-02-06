@@ -4,12 +4,15 @@ import { sendNotification } from "@tauri-apps/plugin-notification";
 
 const appWindow = getCurrentWindow();
 
-function minimizeToTray() {
-  appWindow.hide();
-  sendNotification({ title: "Valorant Thing", body: "Minimized to system tray." });
-}
-
-export default function TitleBar({ simplifiedTheme = true }) {
+export default function TitleBar({ simplifiedTheme = true, minimizeToTray = false }) {
+  const handleMinimize = () => {
+    if (minimizeToTray) {
+      appWindow.hide();
+      sendNotification({ title: "Valorant Thing", body: "Minimized to system tray." });
+    } else {
+      appWindow.minimize();
+    }
+  };
   return (
     <div
       data-tauri-drag-region
@@ -35,7 +38,7 @@ export default function TitleBar({ simplifiedTheme = true }) {
 
       <div className="flex items-center gap-0.5">
         <button
-          onClick={minimizeToTray}
+          onClick={handleMinimize}
           className="w-8 h-8 flex items-center justify-center rounded-md text-text-muted hover:text-text-secondary hover:bg-base-600 transition-colors duration-150"
           title="Minimize to tray"
         >

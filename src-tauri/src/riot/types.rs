@@ -15,6 +15,7 @@ pub struct ConnectionState {
     pub game_tag: Option<String>,
     pub player_card_url: Option<String>,
     pub token_fetched_at: Option<Instant>,
+    pub last_token_check: Option<Instant>,
 }
 
 impl Default for ConnectionState {
@@ -33,6 +34,7 @@ impl Default for ConnectionState {
             game_tag: None,
             player_card_url: None,
             token_fetched_at: None,
+            last_token_check: None,
         }
     }
 }

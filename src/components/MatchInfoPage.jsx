@@ -101,17 +101,16 @@ export default function MatchInfoPage({ henrikApiKey, player: selfPlayer, connec
       const isTeamMode = !nonTeamModes.includes(modeName);
       const info = { mode: modeName, server: match.GamePodID || "", isTeamMode };
 
-      if (phase === "INGAME" && isTeamMode) {
-        const me = (match.Players || []).find((p) => p.Subject === myPuuid);
-        const myTeam = me?.TeamID;
-        const blueScore = (match.Players || []).filter((p) => p.TeamID === "Blue").length > 0 ? (match.Teams?.find?.((t) => t.TeamID === "Blue")?.RoundsWon ?? 0) : 0;
-        const redScore = (match.Players || []).filter((p) => p.TeamID === "Red").length > 0 ? (match.Teams?.find?.((t) => t.TeamID === "Red")?.RoundsWon ?? 0) : 0;
-        const blueTeam = match.Teams?.find?.((t) => t.TeamID === "Blue");
-        const redTeam = match.Teams?.find?.((t) => t.TeamID === "Red");
-        info.allyScore = myTeam === "Blue" ? (blueTeam?.RoundsWon ?? 0) : (redTeam?.RoundsWon ?? 0);
-        info.enemyScore = myTeam === "Blue" ? (redTeam?.RoundsWon ?? 0) : (blueTeam?.RoundsWon ?? 0);
-        info.round = (info.allyScore + info.enemyScore + 1);
-      }
+      // Score tracking disabled — coregame endpoint doesn't return Teams/RoundsWon
+      // if (phase === "INGAME" && isTeamMode) {
+      //   const me = (match.Players || []).find((p) => p.Subject === myPuuid);
+      //   const myTeam = me?.TeamID;
+      //   const blueTeam = match.Teams?.find?.((t) => t.TeamID === "Blue");
+      //   const redTeam = match.Teams?.find?.((t) => t.TeamID === "Red");
+      //   info.allyScore = myTeam === "Blue" ? (blueTeam?.RoundsWon ?? 0) : (redTeam?.RoundsWon ?? 0);
+      //   info.enemyScore = myTeam === "Blue" ? (redTeam?.RoundsWon ?? 0) : (blueTeam?.RoundsWon ?? 0);
+      //   info.round = (info.allyScore + info.enemyScore + 1);
+      // }
 
       setMatchInfo(info);
 
@@ -436,21 +435,7 @@ function MatchHeader({ mapId, maps, matchPhase, matchInfo, matchId, playerCount,
           </div>
         </div>
 
-        {matchPhase === "INGAME" && matchInfo && matchInfo.isTeamMode && matchInfo.allyScore !== undefined && (
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="text-center">
-              <p className="text-lg font-display font-black text-status-green leading-none">{matchInfo.allyScore}</p>
-              <p className="text-[9px] font-body text-text-muted uppercase tracking-wider mt-0.5">You</p>
-            </div>
-            <div className="text-center px-1">
-              <p className="text-[10px] font-body text-text-muted">Round: {matchInfo.round}</p>
-            </div>
-            <div className="text-center">
-              <p className="text-lg font-display font-black text-val-red leading-none">{matchInfo.enemyScore}</p>
-              <p className="text-[9px] font-body text-text-muted uppercase tracking-wider mt-0.5">Enemy</p>
-            </div>
-          </div>
-        )}
+        {/* Score display disabled — coregame endpoint doesn't provide round scores */}
 
         {isDeathmatch && matchPhase === "INGAME" && matchId && (
           <button

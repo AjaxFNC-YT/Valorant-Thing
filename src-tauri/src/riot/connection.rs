@@ -159,7 +159,7 @@ pub fn health_check(state: &Mutex<ConnectionState>) -> Option<PlayerInfo> {
     };
 
     if needs_refresh {
-        eprintln!("[riot] token expired, refreshing...");
+        eprintln!("[riot] token expired (age), refreshing...");
         if let Err(e) = refresh_tokens(state) {
             eprintln!("[riot] token refresh failed: {}, disconnecting", e);
             disconnect(state);
@@ -167,7 +167,68 @@ pub fn health_check(state: &Mutex<ConnectionState>) -> Option<PlayerInfo> {
         }
     }
 
+    let should_validate = {
+        let s = state.lock().ok()?;
+        match s.last_token_check {
+            Some(t) => t.elapsed().as_secs() > 60,
+            None => true,
+        }
+    };
+
+    if should_validate {
+        if let Ok(mut s) = state.lock() {
+            s.last_token_check = Some(Instant::now());
+        }
+        if !validate_token(state) {
+            eprintln!("[riot] token validation failed, refreshing...");
+            if let Err(e) = refresh_tokens(state) {
+                eprintln!("[riot] token refresh also failed: {}, disconnecting", e);
+                disconnect(state);
+                return None;
+            }
+            if !validate_token(state) {
+                eprintln!("[riot] token still invalid after refresh, disconnecting");
+                disconnect(state);
+                return None;
+            }
+            eprintln!("[riot] token refreshed and validated successfully");
+        }
+    }
+
     get_cached_player(state)
+}
+
+fn validate_token(state: &Mutex<ConnectionState>) -> bool {
+    let (shard, access_token, entitlements, client_version, puuid) = {
+        let s = match state.lock() {
+            Ok(s) => s,
+            Err(_) => return false,
+        };
+        match (&s.shard, &s.access_token, &s.entitlements, &s.client_version, &s.puuid) {
+            (Some(sh), Some(at), Some(et), Some(cv), Some(pu)) =>
+                (sh.clone(), at.clone(), et.clone(), cv.clone(), pu.clone()),
+            _ => return false,
+        }
+    };
+
+    let path = format!("/personalization/v2/players/{}/playerloadout", puuid);
+    match pd_get(&shard, &path, &access_token, &entitlements, &client_version) {
+        Ok(body) => {
+            if body.contains("CREDENTIALS_INVALID") || body.contains("\"httpStatus\":401") {
+                eprintln!("[riot] token check: CREDENTIALS_INVALID");
+                return false;
+            }
+            true
+        }
+        Err(e) => {
+            if e.contains("401") || e.contains("CREDENTIALS_INVALID") {
+                eprintln!("[riot] token check error: {}", e);
+                return false;
+            }
+            eprintln!("[riot] token check request failed: {} (network issue, keeping token)", e);
+            true
+        }
+    }
 }
 
 fn refresh_tokens(state: &Mutex<ConnectionState>) -> Result<(), String> {

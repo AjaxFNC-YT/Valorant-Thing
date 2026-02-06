@@ -1,0 +1,79 @@
+{
+    "MatchID": "7c74ad2d-e5b3-4363-b4c0-6d26c9b4d1f2",
+    "Version": 1770416656554,
+    "State": "IN_PROGRESS",
+    "MapID": "/Game/Maps/Ascent/Ascent",
+    "ModeID": "/Game/GameModes/Bomb/BombGameMode.BombGameMode_C",
+    "ProvisioningFlow": "CustomGame",
+    "GamePodID": "aresriot.aws-atl2-prod.na-gp-atlanta-2",
+    "AllMUCName": "7c74ad2d-e5b3-4363-b4c0-6d26c9b4d1f2-all@ares-coregame.na1.pvp.net",
+    "TeamMUCName": "7c74ad2d-e5b3-4363-b4c0-6d26c9b4d1f2-red@ares-coregame.na1.pvp.net",
+    "TeamVoiceID": "7c74ad2d-e5b3-4363-b4c0-6d26c9b4d1f2-tm2",
+    "TeamMatchToken": "eyJhbGciOiJSUzI1NiIsImtpZCI6ImFyZXNxYS1yZXBvcnQiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL3BkLm5hLmEucHZwLm5ldC9yZXN0cmljdGlvbnMiLCJzdWIiOiI3Yzc0YWQyZC1lNWIzLTQzNjMtYjRjMC02ZDI2YzliNGQxZjIiLCJleHAiOjE3NzA0MjM4MTgsImlhdCI6MTc3MDQxNjYxOCwianRpIjoiZjg5Y2U3MGUtOGRiZC00NDAwLWE1NjctZWIzOGZiMGM1ZGVhIiwicHJvZHVjdCI6ImFyZXMiLCJyZWdpb24iOiJuYS1nbHotbmEtMSIsInBhcnRpY2lwYW50UHV1aWRzIjpbIjg4ZGMwZGFhLWZjZWUtNTU4MC1iYjQwLWJiODdmNDEyY2NiZCJdfQ.XUgIkWyJuyeAyUrfC35lelfOGhMMoeDFddyE4BjlrgG5bIpmlRkTQ2MH75uS7V-yW_imv1uPkaxswpq-6wYp8YeFJAC0KkSxXzIbvBekH6yRAFev8HQy44wOIc7Sv4dnfce_-V82LwYQznN4DQ2Y9WI4m4y_HPhXjhwbT7axtCA3oItO22_a8OviZaJ8WiQS_m8a7SRDpYLT-_xkEKiTBQCBFNfgljYY0jXniiKQcGe4EPADAeB3L2_1d_zQaXOLHtuRIt0bFjFEWMPlHyMDMuTdYBayn1SsWcdwpMUlVaWuWTiZG6zzfGv6ezg6J-EbWFSm1ALMz_Qy5v1i8mo1CQ",
+    "IsReconnectable": true,
+    "ConnectionDetails": {
+        "GameServerHosts": [
+            "192.64.173.1",
+            "192.207.0.1"
+        ],
+        "GameServerHost": "192.207.0.1",
+        "GameServerPort": 7334,
+        "GameServerObfuscatedIP": 1580381921,
+        "GameClientHash": 3482990320,
+        "PlayerKey": "d5Lw8dpv+UEwXbyJTbfVcF9HJGkN6Pxot08CV0ZoMfUrc5uyBpm9Y/5xfsKDrEoZNERmO/SlRZoEuoemljkWDw=="
+    },
+    "PostGameDetails": null,
+    "Players": [
+        {
+            "Subject": "a27cf00c-7ad3-56c7-b503-50b761fa7551",
+            "TeamID": "Blue",
+            "CharacterID": "1dbf2edd-4729-0984-3115-daa5eed44993",
+            "PlayerIdentity": {
+                "Subject": "a27cf00c-7ad3-56c7-b503-50b761fa7551",
+                "PlayerCardID": "aca81da3-437e-d9a0-7b6d-b89c0f936daf",
+                "PlayerTitleID": "5d15cfa5-4820-83bb-62ca-908b0a0c6343",
+                "AccountLevel": 0,
+                "PreferredLevelBorderID": "5156a90d-4d65-58d0-f6a8-48a0c003878a",
+                "Incognito": false,
+                "HideAccountLevel": true
+            },
+            "SeasonalBadgeInfo": {
+                "SeasonID": "",
+                "NumberOfWins": 0,
+                "WinsByTier": null,
+                "Rank": 0,
+                "LeaderboardRank": 0
+            },
+            "IsCoach": false,
+            "IsAssociated": true,
+            "PlatformType": "pc",
+            "PremierPrestige": {}
+        },
+        {
+            "Subject": "88dc0daa-fcee-5580-bb40-bb87f412ccbd",
+            "TeamID": "Red",
+            "CharacterID": "1dbf2edd-4729-0984-3115-daa5eed44993",
+            "PlayerIdentity": {
+                "Subject": "88dc0daa-fcee-5580-bb40-bb87f412ccbd",
+                "PlayerCardID": "bb6ae873-43ec-efb4-3ea6-93ac00a82d4e",
+                "PlayerTitleID": "108229d2-4650-d7cb-ea58-adab1c02e709",
+                "AccountLevel": 258,
+                "PreferredLevelBorderID": "bd1082ab-462c-3fb8-e049-28a9750acf0f",
+                "Incognito": false,
+                "HideAccountLevel": false
+            },
+            "SeasonalBadgeInfo": {
+                "SeasonID": "",
+                "NumberOfWins": 0,
+                "WinsByTier": null,
+                "Rank": 0,
+                "LeaderboardRank": 0
+            },
+            "IsCoach": false,
+            "IsAssociated": true,
+            "PlatformType": "pc",
+            "PremierPrestige": {}
+        }
+    ],
+    "MatchmakingData": null
+}

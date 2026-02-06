@@ -116,7 +116,7 @@ function ColorSwatch({ color, onChange, className = "" }) {
         style={{ background: color }}
       />
       {open && (
-        <div className="absolute z-20 top-full left-0 mt-2 p-3 rounded-xl bg-base-600 border border-border shadow-2xl space-y-2">
+        <div className="absolute z-20 top-full left-0 mt-2 p-3 rounded-xl bg-base-600 border border-border shadow-2xl space-y-2" style={{ width: 224 }}>
           <HexColorPicker color={color} onChange={onChange} />
           <div className="flex items-center gap-2">
             <span className="text-xs font-body text-text-muted">#</span>
@@ -124,8 +124,9 @@ function ColorSwatch({ color, onChange, className = "" }) {
               color={color}
               onChange={onChange}
               prefixed={false}
-              className="w-full px-2 py-1 rounded-md bg-base-700 border border-border text-xs font-body text-text-primary outline-none focus:border-val-red/60 transition-colors uppercase tracking-wider"
+              className="flex-1 px-2 py-1 rounded-md bg-base-700 border border-border text-xs font-body text-text-primary outline-none focus:border-val-red/60 transition-colors uppercase tracking-wider"
             />
+            <span className="text-[10px] font-mono text-text-muted/60 select-all">{color.toUpperCase()}</span>
           </div>
         </div>
       )}
@@ -146,6 +147,7 @@ export default function SettingsPage({
   theme, onThemeChange,
   startWithWindows, onStartWithWindowsChange,
   startMinimized, onStartMinimizedChange,
+  minimizeToTray, onMinimizeToTrayChange,
   simplifiedTheme, onSimplifiedThemeChange,
   customTheme, onCustomThemeChange,
   discordRpc, onDiscordRpcChange,
@@ -257,9 +259,16 @@ export default function SettingsPage({
         <div className="flex items-center justify-between p-4">
           <div>
             <p className="text-sm font-display font-medium text-text-primary">Start Minimized</p>
-            <p className="text-xs font-body text-text-muted mt-0.5">Start in system tray</p>
+            <p className="text-xs font-body text-text-muted mt-0.5">Start hidden in system tray</p>
           </div>
           <Toggle enabled={startMinimized} onChange={onStartMinimizedChange} />
+        </div>
+        <div className="flex items-center justify-between p-4">
+          <div>
+            <p className="text-sm font-display font-medium text-text-primary">Minimize to Tray</p>
+            <p className="text-xs font-body text-text-muted mt-0.5">Hide to system tray instead of taskbar</p>
+          </div>
+          <Toggle enabled={minimizeToTray} onChange={onMinimizeToTrayChange} />
         </div>
         <div className="flex items-center justify-between p-4">
           <div>
@@ -449,7 +458,7 @@ export default function SettingsPage({
 
       <div className="p-4 rounded-xl bg-base-700 border border-border space-y-1">
         <h2 className="text-sm font-display font-semibold text-text-primary">About</h2>
-        <p className="text-xs font-body text-text-secondary">Valorant Thing v1.0.0</p>
+        <p className="text-xs font-body text-text-secondary">Valorant Thing v1.0.1</p>
         <p className="text-xs font-body text-text-muted">
           Created by AjaxFNC · Built with Rust & Tauri · Uses official Valorant APIs
         </p>
