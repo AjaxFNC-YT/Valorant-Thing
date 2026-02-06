@@ -18,12 +18,10 @@
 
 ## Screenshots
 
-```
 ![Main View](screenshots/main.png)
 ![Match Info](screenshots/match-info.png)
 ![Map Dodge](screenshots/map-dodge.png)
 ![Settings](screenshots/settings.png)
-```
 
 ---
 
