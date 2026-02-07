@@ -36,13 +36,16 @@ export default function PartyPage({ connected, addLog }) {
     try {
       const raw = await invoke("get_party");
       if (cancelledRef.current) return;
+      addLog?.("info", "[Party] Response", raw);
       const data = JSON.parse(raw);
       data.members.sort((a, b) => (b.is_owner ? 1 : 0) - (a.is_owner ? 1 : 0));
       setParty(data);
       setError(null);
     } catch (e) {
       if (cancelledRef.current) return;
-      setError(typeof e === "string" ? e : e?.message || "Failed to fetch party");
+      const msg = typeof e === "string" ? e : e?.message || "Failed to fetch party";
+      addLog?.("error", "[Party] Error", msg);
+      setError(msg);
     } finally {
       if (!cancelledRef.current) setLoading(false);
     }

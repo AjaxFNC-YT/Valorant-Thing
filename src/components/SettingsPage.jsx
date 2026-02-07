@@ -139,6 +139,13 @@ function buildPreviewGradient(ct) {
   return `linear-gradient(${ct.angle}deg, ${sorted.map(s => `${s.color} ${s.pos}%`).join(", ")})`;
 }
 
+const CONFIG_KEYS = [
+  "show_logs", "app_theme", "simplified_theme", "custom_theme",
+  "discord_rpc", "start_with_windows", "start_minimized", "minimize_to_tray",
+  "henrik_api_key", "mapdodge-config", "auto_unqueue", "auto_requeue",
+  "instalock_select_delay", "instalock_lock_delay", "instalock-config",
+];
+
 export default function SettingsPage({
   showLogs, onShowLogsChange,
   selectDelay, onSelectDelayChange,
@@ -153,6 +160,7 @@ export default function SettingsPage({
   discordRpc, onDiscordRpcChange,
 }) {
   const fileRef = useRef(null);
+  const configFileRef = useRef(null);
   const [presetOpen, setPresetOpen] = useState(false);
 
   const exportTheme = () => {
@@ -176,6 +184,38 @@ export default function SettingsPage({
           onCustomThemeChange(data);
           onThemeChange("custom");
         }
+      } catch {}
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  const exportConfig = () => {
+    const config = {};
+    for (const key of CONFIG_KEYS) {
+      const val = localStorage.getItem(key);
+      if (val !== null) config[key] = val;
+    }
+    const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "config.valthing";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importConfig = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        for (const key of CONFIG_KEYS) {
+          if (key in data) localStorage.setItem(key, data[key]);
+        }
+        window.location.reload();
       } catch {}
     };
     reader.readAsText(file);
@@ -456,9 +496,31 @@ export default function SettingsPage({
         </div>
       </div>
 
+      <div className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
+        <h2 className="text-sm font-display font-semibold text-text-primary">Config</h2>
+        <p className="text-xs font-body text-text-muted">Export or import your entire configuration including agents, maps, theme, and all settings.</p>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportConfig}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-base-600 border border-border text-xs font-body text-text-primary hover:bg-base-500 transition-colors"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+            Export Config
+          </button>
+          <button
+            onClick={() => configFileRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-base-600 border border-border text-xs font-body text-text-primary hover:bg-base-500 transition-colors"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>
+            Import Config
+          </button>
+          <input ref={configFileRef} type="file" accept=".valthing" onChange={importConfig} className="hidden" />
+        </div>
+      </div>
+
       <div className="p-4 rounded-xl bg-base-700 border border-border space-y-1">
         <h2 className="text-sm font-display font-semibold text-text-primary">About</h2>
-        <p className="text-xs font-body text-text-secondary">Valorant Thing v1.0.1</p>
+        <p className="text-xs font-body text-text-secondary">Valorant Thing v1.1.0</p>
         <p className="text-xs font-body text-text-muted">
           Created by AjaxFNC · Built with Rust & Tauri · Uses official Valorant APIs
         </p>
