@@ -555,7 +555,7 @@ export default function App() {
                 Download Node.js
               </button>
               <button
-                onClick={() => import("@tauri-apps/api/process").then(m => m.relaunch()).catch(() => window.location.reload())}
+                onClick={() => window.location.reload()}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-text-muted/20 text-xs font-display font-medium text-text-primary hover:border-text-muted/40 transition-colors cursor-pointer bg-transparent"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" /></svg>
