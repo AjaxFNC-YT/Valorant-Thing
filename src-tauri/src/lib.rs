@@ -379,6 +379,8 @@ async fn download_and_install_update(app: tauri::AppHandle, url: String, filenam
     .map_err(|e| format!("Task failed: {}", e))?;
 
     app.exit(0);
+    #[allow(unreachable_code)]
+    Ok(())
 }
 
 #[tauri::command]
