@@ -95,6 +95,7 @@ export default function App() {
   const [startMinimized, setStartMinimized] = useState(() => localStorage.getItem("start_minimized") === "true");
   const [minimizeToTray, setMinimizeToTray] = useState(() => localStorage.getItem("minimize_to_tray") === "true");
   const [closeWithGame, setCloseWithGame] = useState(() => localStorage.getItem("close_with_game") === "true");
+  const [devMode, setDevMode] = useState(() => localStorage.getItem("dev_mode") === "true");
   const [nodeInstalled, setNodeInstalled] = useState(true);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [updating, setUpdating] = useState(false);
@@ -185,6 +186,19 @@ export default function App() {
     }, 10000);
     return () => clearInterval(id);
   }, [closeWithGame, status]);
+
+  useEffect(() => {
+    localStorage.setItem("dev_mode", String(devMode));
+    if (!devMode) return;
+    const handler = (e) => {
+      if (e.ctrlKey && e.shiftKey && e.key === "I") {
+        e.preventDefault();
+        invoke("toggle_devtools");
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [devMode]);
 
   useEffect(() => { mapDodgeActiveRef.current = mapDodgeActive; }, [mapDodgeActive]);
   useEffect(() => { autoUnqueueRef.current = autoUnqueue; localStorage.setItem("auto_unqueue", String(autoUnqueue)); }, [autoUnqueue]);
@@ -714,6 +728,8 @@ export default function App() {
               onDiscordRpcChange={setDiscordRpc}
               closeWithGame={closeWithGame}
               onCloseWithGameChange={(v) => { setCloseWithGame(v); localStorage.setItem("close_with_game", String(v)); }}
+              devMode={devMode}
+              onDevModeChange={setDevMode}
             />
           )}
           {activeTab === "party" && <PartyPage connected={status === "connected"} addLog={addLog} />}

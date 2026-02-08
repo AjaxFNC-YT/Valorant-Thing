@@ -41,6 +41,17 @@ fn is_valorant_running() -> bool {
 }
 
 #[tauri::command]
+fn toggle_devtools(app: tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        if window.is_devtools_open() {
+            window.close_devtools();
+        } else {
+            window.open_devtools();
+        }
+    }
+}
+
+#[tauri::command]
 fn check_node_installed() -> bool {
     let mut cmd = std::process::Command::new("node");
     cmd.args(["--version"]);
@@ -516,6 +527,7 @@ pub fn run() {
             get_status,
             get_player,
             is_valorant_running,
+            toggle_devtools,
             check_node_installed,
             health_check,
             exit_app,

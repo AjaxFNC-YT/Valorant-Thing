@@ -161,6 +161,7 @@ export default function SettingsPage({
   customTheme, onCustomThemeChange,
   discordRpc, onDiscordRpcChange,
   closeWithGame, onCloseWithGameChange,
+  devMode, onDevModeChange,
 }) {
   const fileRef = useRef(null);
   const configFileRef = useRef(null);
@@ -329,6 +330,13 @@ export default function SettingsPage({
             <p className="text-xs font-body text-text-muted mt-0.5">Auto-close when Valorant and Riot Client are both closed</p>
           </div>
           <Toggle enabled={closeWithGame} onChange={onCloseWithGameChange} />
+        </div>
+        <div className="flex items-center justify-between p-4">
+          <div>
+            <p className="text-sm font-display font-medium text-text-primary">Developer Mode</p>
+            <p className="text-xs font-body text-text-muted mt-0.5">Enable inspect element (Ctrl+Shift+I)</p>
+          </div>
+          <Toggle enabled={devMode} onChange={onDevModeChange} />
         </div>
       </div>
 
