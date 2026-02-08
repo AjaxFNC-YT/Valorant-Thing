@@ -535,28 +535,33 @@ export default function App() {
       {!nodeInstalled && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm">
           <div className="max-w-sm p-6 rounded-xl bg-base-700 border border-border shadow-2xl text-center space-y-4">
-            <div className="w-14 h-14 mx-auto rounded-full bg-val-red/15 border border-val-red/30 flex items-center justify-center">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-val-red">
-                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                <line x1="12" y1="9" x2="12" y2="13" />
-                <line x1="12" y1="17" x2="12.01" y2="17" />
+            <div className="w-14 h-14 mx-auto rounded-full bg-val-red/10 border border-val-red/20 flex items-center justify-center">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-val-red">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
               </svg>
             </div>
             <h2 className="text-base font-display font-bold text-text-primary">Node.js Required</h2>
             <p className="text-xs font-body text-text-muted leading-relaxed">
-              Valorant Thing requires Node.js to communicate with Riot's APIs. Please install Node.js and restart the app.
+              Valorant Thing requires Node.js to communicate with Riot's APIs. Install Node.js, then restart the app.
             </p>
-            <a
-              href="https://nodejs.org"
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => { e.preventDefault(); import("@tauri-apps/plugin-shell").then(m => m.open("https://nodejs.org")); }}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-val-red text-white text-xs font-display font-semibold hover:bg-val-red-dark transition-colors cursor-pointer"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
-              Download Node.js
-            </a>
-            <p className="text-[10px] font-body text-text-muted/50">After installing, restart Valorant Thing.</p>
+            <div className="flex items-center justify-center gap-3 pt-1">
+              <button
+                onClick={() => import("@tauri-apps/plugin-shell").then(m => m.open("https://nodejs.org"))}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-text-muted/20 text-xs font-display font-medium text-text-primary hover:border-text-muted/40 transition-colors cursor-pointer bg-transparent"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
+                Download Node.js
+              </button>
+              <button
+                onClick={() => import("@tauri-apps/api/process").then(m => m.relaunch()).catch(() => window.location.reload())}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-text-muted/20 text-xs font-display font-medium text-text-primary hover:border-text-muted/40 transition-colors cursor-pointer bg-transparent"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" /></svg>
+                Restart App
+              </button>
+            </div>
           </div>
         </div>
       )}
