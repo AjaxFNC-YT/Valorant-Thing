@@ -1,7 +1,9 @@
 {
   "identifier": "default",
   "description": "Default capabilities for the main window",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-close",
@@ -18,6 +20,30 @@
     "notification:default",
     "dialog:default",
     "fs:default",
-    "fs:allow-write-text-file"
+    "fs:allow-write-text-file",
+    {
+      "identifier": "fs:allow-exists",
+      "allow": [
+        {
+          "path": "C:\\Riot Games\\VALORANT\\**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-copy-file",
+      "allow": [
+        {
+          "path": "C:\\Riot Games\\VALORANT\\**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-remove",
+      "allow": [
+        {
+          "path": "C:\\Riot Games\\VALORANT\\**"
+        }
+      ]
+    }
   ]
 }
