@@ -83,15 +83,23 @@ export default function HomePage({ connected, player, refreshKey, onRefresh }) {
     setLoading(false);
   }, [connected, onRefresh]);
 
-  const fetchMatches = useCallback(async () => {
+  const fetchMatches = useCallback(async (retry = false) => {
     if (!connected) return;
     setMatchLoading(true);
     try {
       const raw = await invoke("get_match_page", { page: 0, pageSize: 25 });
       const data = JSON.parse(raw);
-      setMatches(data.matches || []);
+      const list = data.matches || [];
+      if (list.length === 0 && !retry) {
+        setTimeout(() => fetchMatches(true), 3000);
+        return;
+      }
+      setMatches(list);
     } catch (e) {
-      console.error("[matches] fetch failed:", e);
+      if (!retry) {
+        setTimeout(() => fetchMatches(true), 3000);
+        return;
+      }
     }
     setMatchLoading(false);
   }, [connected]);
