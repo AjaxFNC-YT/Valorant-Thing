@@ -41,6 +41,18 @@ fn is_valorant_running() -> bool {
 }
 
 #[tauri::command]
+fn check_node_installed() -> bool {
+    let mut cmd = std::process::Command::new("node");
+    cmd.args(["--version"]);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+    cmd.output().map(|o| o.status.success()).unwrap_or(false)
+}
+
+#[tauri::command]
 async fn health_check(state: tauri::State<'_, SharedState>) -> Result<Option<riot::PlayerInfo>, String> {
     let state = Arc::clone(&state);
     tauri::async_runtime::spawn_blocking(move || Ok(riot::health_check(&state)))
@@ -264,6 +276,111 @@ fn exit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[tauri::command]
+async fn check_for_update() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let script = r#"const https=require('https');const o={hostname:'api.github.com',path:'/repos/AjaxFNC-YT/Valorant-Thing/releases/latest',headers:{'User-Agent':'ValorantThing'}};https.get(o,res=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>process.stdout.write(d))}).on('error',e=>{process.stderr.write(e.message);process.exit(1)})"#;
+        let mut cmd = std::process::Command::new("node");
+        cmd.args(["-e", script]);
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+        }
+        let output = cmd.output().map_err(|e| format!("node failed: {}", e))?;
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        }
+        let body = String::from_utf8_lossy(&output.stdout).to_string();
+        let json: serde_json::Value = serde_json::from_str(&body).map_err(|e| format!("parse: {}", e))?;
+        let tag = json["tag_name"].as_str().unwrap_or("").trim_start_matches('v');
+        let current = CURRENT_VERSION;
+        if tag.is_empty() || tag == current {
+            return Ok(serde_json::json!({"update": false, "current": current}).to_string());
+        }
+        let tag_parts: Vec<u32> = tag.split('.').filter_map(|s| s.parse().ok()).collect();
+        let cur_parts: Vec<u32> = current.split('.').filter_map(|s| s.parse().ok()).collect();
+        let is_newer = tag_parts > cur_parts;
+        if !is_newer {
+            return Ok(serde_json::json!({"update": false, "current": current}).to_string());
+        }
+        let mut download_url = String::new();
+        let mut asset_name = String::new();
+        if let Some(assets) = json["assets"].as_array() {
+            for a in assets {
+                let name = a["name"].as_str().unwrap_or("");
+                if name.ends_with(".exe") && name.contains("setup") {
+                    download_url = a["browser_download_url"].as_str().unwrap_or("").to_string();
+                    asset_name = name.to_string();
+                    break;
+                }
+            }
+        }
+        Ok(serde_json::json!({
+            "update": true,
+            "current": current,
+            "latest": tag,
+            "download_url": download_url,
+            "asset_name": asset_name,
+            "release_url": json["html_url"].as_str().unwrap_or(""),
+        }).to_string())
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn download_and_install_update(app: tauri::AppHandle, url: String, filename: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let temp = std::env::temp_dir();
+        let installer_path = temp.join(&filename);
+        let bat_path = temp.join("valthing_update.bat");
+        let installer_str = installer_path.to_string_lossy().to_string();
+        let bat_str = bat_path.to_string_lossy().to_string();
+
+        let script = format!(
+            r#"const https=require('https');const fs=require('fs');const f=fs.createWriteStream('{}');function dl(u){{https.get(u,{{headers:{{'User-Agent':'ValorantThing'}}}},res=>{{if(res.statusCode>=300&&res.statusCode<400&&res.headers.location){{dl(res.headers.location)}}else if(res.statusCode===200){{res.pipe(f);f.on('finish',()=>{{f.close();process.stdout.write('ok')}})}}else{{process.stderr.write('HTTP '+res.statusCode);process.exit(1)}}}})}};dl('{}')"#,
+            installer_str.replace('\\', "\\\\"),
+            url
+        );
+
+        let mut cmd = std::process::Command::new("node");
+        cmd.args(["-e", &script]);
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+        }
+        let output = cmd.output().map_err(|e| format!("download failed: {}", e))?;
+        if !output.status.success() {
+            return Err(format!("Download failed: {}", String::from_utf8_lossy(&output.stderr).trim()));
+        }
+
+        let bat_content = format!(
+            "@echo off\r\ntimeout /t 2 /nobreak >nul\r\nstart \"\" \"{}\"\r\ndel \"%~f0\"\r\n",
+            installer_str
+        );
+        std::fs::write(&bat_path, &bat_content).map_err(|e| format!("write bat: {}", e))?;
+
+        let mut bat_cmd = std::process::Command::new("cmd");
+        bat_cmd.args(["/c", "start", "", "/b", &bat_str]);
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            bat_cmd.creation_flags(0x08000000);
+        }
+        bat_cmd.spawn().map_err(|e| format!("spawn bat: {}", e))?;
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?;
+
+    app.exit(0);
+}
+
 #[tauri::command]
 fn get_token_age(state: tauri::State<'_, SharedState>) -> u64 {
     riot::get_token_age_secs(&state)
@@ -378,8 +495,11 @@ pub fn run() {
             get_status,
             get_player,
             is_valorant_running,
+            check_node_installed,
             health_check,
             exit_app,
+            check_for_update,
+            download_and_install_update,
             check_current_game,
             select_agent,
             lock_agent,

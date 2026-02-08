@@ -523,6 +523,10 @@ pub fn xmpp_send_fake_presence(state: &Mutex<XmppState>, presence_json: &str) ->
             if let Some(v) = params["playerTitleId"].as_str().filter(|s| !s.is_empty()) { pd.insert("playerTitleId".into(), serde_json::json!(v)); }
         }
 
+        if !obj.contains_key("matchPresenceData") || !obj["matchPresenceData"].is_object() {
+            obj.insert("matchPresenceData".into(), serde_json::json!({}));
+        }
+
         if let Some(session) = params["sessionLoopState"].as_str() {
             if let Some(md) = obj.get_mut("matchPresenceData").and_then(|v| v.as_object_mut()) {
                 md.insert("sessionLoopState".into(), serde_json::json!(session));
@@ -533,6 +537,8 @@ pub fn xmpp_send_fake_presence(state: &Mutex<XmppState>, presence_json: &str) ->
             obj.insert("queueId".into(), serde_json::json!(queue));
             if let Some(md) = obj.get_mut("matchPresenceData").and_then(|v| v.as_object_mut()) {
                 md.insert("queueId".into(), serde_json::json!(queue));
+                let flow = if queue == "newmap" || queue.is_empty() { "Invalid" } else { "Matchmaking" };
+                md.insert("provisioningFlow".into(), serde_json::json!(flow));
             }
         }
 

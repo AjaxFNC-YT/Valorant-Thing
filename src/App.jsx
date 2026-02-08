@@ -92,6 +92,9 @@ export default function App() {
   const [startWithWindows, setStartWithWindows] = useState(() => localStorage.getItem("start_with_windows") === "true");
   const [startMinimized, setStartMinimized] = useState(() => localStorage.getItem("start_minimized") === "true");
   const [minimizeToTray, setMinimizeToTray] = useState(() => localStorage.getItem("minimize_to_tray") === "true");
+  const [nodeInstalled, setNodeInstalled] = useState(true);
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [updating, setUpdating] = useState(false);
   const [logs, setLogs] = useState([]);
   const [instalockActive, setInstalockActive] = useState(false);
   const [henrikApiKey, setHenrikApiKey] = useState(() => localStorage.getItem("henrik_api_key") || "");
@@ -142,6 +145,19 @@ export default function App() {
         sendNotification({ title: "Valorant Thing", body: "Started in system tray." });
       }).catch(() => {});
     }
+  }, []);
+
+  useEffect(() => {
+    invoke("check_node_installed").then((ok) => setNodeInstalled(ok)).catch(() => setNodeInstalled(false));
+  }, []);
+
+  useEffect(() => {
+    invoke("check_for_update").then((raw) => {
+      try {
+        const data = JSON.parse(raw);
+        if (data.update && data.download_url) setUpdateInfo(data);
+      } catch {}
+    }).catch(() => {});
   }, []);
 
   useEffect(() => { mapDodgeActiveRef.current = mapDodgeActive; }, [mapDodgeActive]);
@@ -516,6 +532,72 @@ export default function App() {
       } : undefined}
     >
       <TitleBar simplifiedTheme={simplifiedTheme} minimizeToTray={minimizeToTray} />
+      {!nodeInstalled && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="max-w-sm p-6 rounded-xl bg-base-700 border border-border shadow-2xl text-center space-y-4">
+            <div className="w-14 h-14 mx-auto rounded-full bg-val-red/15 border border-val-red/30 flex items-center justify-center">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-val-red">
+                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+            </div>
+            <h2 className="text-base font-display font-bold text-text-primary">Node.js Required</h2>
+            <p className="text-xs font-body text-text-muted leading-relaxed">
+              Valorant Thing requires Node.js to communicate with Riot's APIs. Please install Node.js and restart the app.
+            </p>
+            <a
+              href="https://nodejs.org"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => { e.preventDefault(); import("@tauri-apps/plugin-shell").then(m => m.open("https://nodejs.org")); }}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-val-red text-white text-xs font-display font-semibold hover:bg-val-red-dark transition-colors cursor-pointer"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
+              Download Node.js
+            </a>
+            <p className="text-[10px] font-body text-text-muted/50">After installing, restart Valorant Thing.</p>
+          </div>
+        </div>
+      )}
+      {updateInfo && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="max-w-sm p-6 rounded-xl bg-base-700 border border-border shadow-2xl text-center space-y-4">
+            <div className="w-14 h-14 mx-auto rounded-full bg-accent-blue/15 border border-accent-blue/30 flex items-center justify-center">
+              {updating ? (
+                <div className="w-7 h-7 border-2 border-accent-blue/30 border-t-accent-blue rounded-full animate-spin" />
+              ) : (
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-accent-blue">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                </svg>
+              )}
+            </div>
+            <h2 className="text-base font-display font-bold text-text-primary">
+              {updating ? "Updating..." : "Update Available"}
+            </h2>
+            <p className="text-xs font-body text-text-muted leading-relaxed">
+              {updating
+                ? "Downloading update, the installer will launch automatically..."
+                : `v${updateInfo.current} → v${updateInfo.latest}`}
+            </p>
+            {!updating && (
+              <button
+                onClick={async () => {
+                  setUpdating(true);
+                  try {
+                    await invoke("download_and_install_update", { url: updateInfo.download_url, filename: updateInfo.asset_name });
+                  } catch (e) {
+                    setUpdating(false);
+                  }
+                }}
+                className="px-5 py-2.5 rounded-lg bg-accent-blue text-white text-xs font-display font-semibold hover:brightness-110 transition-all"
+              >
+                Update Now
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       <div className="flex flex-1 min-h-0">
         <Sidebar
           status={status}
