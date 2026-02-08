@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
+import { motion, AnimatePresence } from "framer-motion";
 import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import InstalockPage from "./components/InstalockPage";
@@ -64,7 +65,7 @@ function buildGradientCSS(ct) {
 }
 
 function formatTimeLeft(ageSecs) {
-  const left = Math.max(0, 3600 - ageSecs);
+  const left = Math.max(0, 600 - ageSecs);
   const m = Math.floor(left / 60);
   const s = left % 60;
   if (m > 0) return `${m}m ${s}s`;
@@ -310,6 +311,7 @@ export default function App() {
   useEffect(() => {
     const unlisten = listen("backend-log", (event) => {
       const { log_type, message } = event.payload;
+      if (message && message.startsWith("[XMPP]")) return;
       addLog(log_type || "info", message);
     });
     return () => { unlisten.then(fn => fn()); };
@@ -324,6 +326,13 @@ export default function App() {
     setStatus("connecting");
     addLog("info", "[Connect] Attempting to connect to Riot Client...");
     try {
+      const running = await invoke("is_valorant_running");
+      if (!running) {
+        addLog("error", "[Connect] Valorant and Riot Client must both be running");
+        setStatus("waiting");
+        connectingRef.current = false;
+        return;
+      }
       const info = await invoke("connect");
       setPlayer(info);
       setStatus("connected");
@@ -363,10 +372,12 @@ export default function App() {
     setShowRefreshModal(true);
   };
 
-  const confirmRefresh = () => {
+  const confirmRefresh = async () => {
     setShowRefreshModal(false);
+    try { await invoke("disconnect"); } catch {}
     setPlayer(null);
     setStatus("waiting");
+    doConnect();
   };
 
   useEffect(() => {
@@ -624,9 +635,10 @@ export default function App() {
           </div>
         </div>
       )}
+      <AnimatePresence>
       {updateInfo && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="max-w-md w-full p-6 rounded-xl bg-base-700 border border-border shadow-2xl text-center space-y-4">
+        <motion.div key="update-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="fixed inset-0 z-[150] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }} transition={{ duration: 0.2, ease: "easeOut" }} className="max-w-md w-full p-6 rounded-xl bg-base-700 border border-border shadow-2xl text-center space-y-4">
             <div className="w-14 h-14 mx-auto rounded-full bg-accent-blue/15 border border-accent-blue/30 flex items-center justify-center">
               {updating ? (
                 <div className="w-7 h-7 border-2 border-accent-blue/30 border-t-accent-blue rounded-full animate-spin" />
@@ -659,9 +671,10 @@ export default function App() {
                 Update Now
               </button>
             )}
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
       <div className="flex flex-1 min-h-0">
         <Sidebar
           status={status}
@@ -674,28 +687,38 @@ export default function App() {
           onDodge={handleDodge}
           simplifiedTheme={simplifiedTheme}
         />
-        <main className="flex-1 flex min-h-0">
+        <main className="flex-1 flex min-h-0 relative">
+          <AnimatePresence mode="wait">
           {activeTab === "home" && (
-            <HomePage connected={status === "connected"} player={player} refreshKey={refreshKey} />
+            <motion.div key="home" className="flex-1 flex min-h-0" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15, ease: "easeOut" }}>
+            <HomePage connected={status === "connected"} player={player} refreshKey={refreshKey} onRefresh={confirmRefresh} />
+            </motion.div>
           )}
           {activeTab === "instalock" && (
+            <motion.div key="instalock" className="flex-1 flex min-h-0" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15, ease: "easeOut" }}>
             <InstalockPage
               onActiveChange={setInstalockActive}
               onConfigChange={(cfg) => { instalockConfigRef.current = cfg; }}
               connected={status === "connected"}
             />
+            </motion.div>
           )}
           {activeTab === "matchinfo" && (
+            <motion.div key="matchinfo" className="flex-1 flex min-h-0" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15, ease: "easeOut" }}>
             <MatchInfoPage henrikApiKey={henrikApiKey} player={player} connected={status === "connected"} />
+            </motion.div>
           )}
           {activeTab === "mapdodge" && (
+            <motion.div key="mapdodge" className="flex-1 flex min-h-0" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15, ease: "easeOut" }}>
             <MapDodgePage
               onActiveChange={setMapDodgeActive}
               onBlacklistChange={(cfg) => { mapDodgeRef.current = cfg; }}
               connected={status === "connected"}
             />
+            </motion.div>
           )}
           {activeTab === "settings" && (
+            <motion.div key="settings" className="flex-1 flex min-h-0" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15, ease: "easeOut" }}>
             <SettingsPage
               showLogs={showLogs}
               onShowLogsChange={(v) => { setShowLogs(v); localStorage.setItem("show_logs", String(v)); }}
@@ -731,10 +754,18 @@ export default function App() {
               devMode={devMode}
               onDevModeChange={setDevMode}
             />
+            </motion.div>
           )}
-          {activeTab === "party" && <PartyPage connected={status === "connected"} addLog={addLog} />}
-          {activeTab === "fakestatus" && <FakeStatusPage connected={status === "connected"} showLogsSetting={showLogs} onUnsavedChange={setFakeStatusUnsaved} />}
+          {activeTab === "party" && (
+            <motion.div key="party" className="flex-1 flex min-h-0" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15, ease: "easeOut" }}>
+            <PartyPage connected={status === "connected"} addLog={addLog} onRefresh={confirmRefresh} />
+            </motion.div>
+          )}
+          {activeTab === "fakestatus" && (
+            <motion.div key="fakestatus" className="flex-1 flex min-h-0" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15, ease: "easeOut" }} />
+          )}
           {activeTab === "misc" && (
+            <motion.div key="misc" className="flex-1 flex min-h-0" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15, ease: "easeOut" }}>
             <MiscPage
               connected={status === "connected"}
               autoUnqueue={autoUnqueue}
@@ -742,13 +773,36 @@ export default function App() {
               autoRequeue={autoRequeue}
               onAutoRequeueChange={setAutoRequeue}
             />
+            </motion.div>
           )}
-          {activeTab === "logs" && showLogs && <LogsPage logs={logs} onClear={() => setLogs([])} />}
+          {activeTab === "logs" && showLogs && (
+            <motion.div key="logs" className="flex-1 flex min-h-0" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15, ease: "easeOut" }}>
+            <LogsPage logs={logs} onClear={() => setLogs([])} />
+            </motion.div>
+          )}
+          </AnimatePresence>
+          <div className={`absolute inset-0 flex min-h-0 ${activeTab === "fakestatus" ? "" : "hidden"}`}>
+            <FakeStatusPage connected={status === "connected"} showLogsSetting={showLogs} onUnsavedChange={setFakeStatusUnsaved} />
+          </div>
         </main>
       </div>
+      <AnimatePresence>
       {showRefreshModal && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm rounded-xl">
-          <div className="bg-base-700 border border-border rounded-xl p-5 w-72 shadow-2xl">
+        <motion.div
+          key="refresh-overlay"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm rounded-xl"
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 8 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+            className="bg-base-700 border border-border rounded-xl p-5 w-72 shadow-2xl"
+          >
             <div className="flex items-center gap-2 mb-3">
               <div className="w-8 h-8 rounded-lg bg-val-red/15 flex items-center justify-center">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-val-red">
@@ -784,9 +838,10 @@ export default function App() {
                 Refresh
               </button>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { motion } from "framer-motion";
 
 const EXCLUDED_MAPS = ["The Range", "District", "Kasbah", "Drift", "Glitch", "Piazza", "Basic Training", "Skirmish A", "Skirmish B", "Skirmish C"];
 
@@ -183,8 +184,24 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-text-muted text-sm font-body">Loading agents...</div>
+      <div className="flex-1 flex flex-col min-h-0 p-4 gap-3">
+        <div className="flex items-center gap-2 shrink-0 animate-pulse">
+          <div className="h-8 w-44 rounded-lg bg-base-700" />
+          <div className="flex-1" />
+          <div className="h-8 w-44 rounded-lg bg-base-700" />
+          <div className="h-5 w-9 rounded-full bg-base-700" />
+        </div>
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <div className="h-3 w-20 rounded bg-base-600 mb-3" />
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1.5 animate-pulse">
+            {Array.from({ length: 20 }, (_, i) => (
+              <div key={i} className="flex flex-col items-center gap-1 p-1.5">
+                <div className="w-14 h-14 rounded-md bg-base-600" />
+                <div className="h-2.5 w-10 rounded bg-base-600" />
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -285,14 +302,15 @@ function AllMapsView({ agents, selectedAgent, onAgentClick, isOwned }) {
         Select Agent
       </p>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1.5">
-        {agents.map((agent) => (
+        {agents.map((agent, i) => (
+          <motion.div key={agent.uuid} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.15, delay: Math.min(i * 0.02, 0.4) }}>
           <AgentCard
-            key={agent.uuid}
             agent={agent}
             selected={selectedAgent?.uuid === agent.uuid}
             onClick={() => onAgentClick(agent)}
             owned={isOwned(agent)}
           />
+          </motion.div>
         ))}
       </div>
     </div>
@@ -312,14 +330,15 @@ function PerMapView({ agents, maps, search, selectedMap, onMapSelect, onMapBack,
           Select Map
         </p>
         <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
-          {filtered.map((map) => (
+          {filtered.map((map, i) => (
+            <motion.div key={map.uuid} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15, delay: Math.min(i * 0.03, 0.3) }}>
             <MapCard
-              key={map.uuid}
               map={map}
               selectedAgent={getAgentForMap(map.uuid)}
               isDefault={!perMapSelections[map.uuid] && !!getAgentForMap(map.uuid)}
               onClick={() => onMapSelect(map)}
             />
+            </motion.div>
           ))}
         </div>
       </div>

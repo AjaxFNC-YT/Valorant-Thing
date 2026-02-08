@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { motion } from "framer-motion";
 
 const AGENT_MAP_URL = "https://valorant-api.com/v1/agents?isPlayableCharacter=true";
 const COMP_TIERS_URL = "https://valorant-api.com/v1/competitivetiers";
@@ -302,24 +303,53 @@ export default function MatchInfoPage({ henrikApiKey, player: selfPlayer, connec
     );
   }
 
-  if (!matchPhase && !loading) {
+  if (!matchPhase) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-2">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted/40">
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 6v6l4 2" />
+      <div className="flex-1 flex flex-col items-center justify-center gap-3">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted/25">
+          <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+          <circle cx="9" cy="7" r="4" />
+          <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
         </svg>
-        <p className="text-text-muted text-sm font-body">Not currently in a match</p>
+        <div className="text-center space-y-1">
+          <p className="text-sm font-display font-semibold text-text-secondary">No Active Match</p>
+          <p className="text-xs font-body text-text-muted">Player info will appear when you enter a match</p>
+        </div>
       </div>
     );
   }
 
-  if (loading && players.length === 0) {
+  if (players.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="flex items-center gap-2">
-          <Spinner />
-          <p className="text-text-muted text-sm font-body">Looking for match...</p>
+      <div className="flex-1 flex flex-col min-h-0 p-4 gap-3 animate-pulse">
+        <div className="h-[72px] rounded-xl bg-base-700 border border-border" />
+        <div className="grid grid-cols-2 gap-4 flex-1">
+          <div className="space-y-1.5">
+            <div className="h-3 w-20 rounded bg-base-600 mb-2" />
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div key={i} className="flex items-center gap-2.5 p-2 rounded-lg bg-base-700 border border-border h-12">
+                <div className="w-8 h-8 rounded-md bg-base-600 shrink-0" />
+                <div className="flex-1 space-y-1">
+                  <div className="h-3 w-24 rounded bg-base-600" />
+                  <div className="h-2.5 w-14 rounded bg-base-600" />
+                </div>
+                <div className="h-6 w-6 rounded bg-base-600" />
+              </div>
+            ))}
+          </div>
+          <div className="space-y-1.5">
+            <div className="h-3 w-20 rounded bg-base-600 mb-2" />
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div key={i} className="flex items-center gap-2.5 p-2 rounded-lg bg-base-700 border border-border h-12">
+                <div className="w-8 h-8 rounded-md bg-base-600 shrink-0" />
+                <div className="flex-1 space-y-1">
+                  <div className="h-3 w-24 rounded bg-base-600" />
+                  <div className="h-2.5 w-14 rounded bg-base-600" />
+                </div>
+                <div className="h-6 w-6 rounded bg-base-600" />
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -339,8 +369,10 @@ export default function MatchInfoPage({ henrikApiKey, player: selfPlayer, connec
                 <span className="w-2 h-2 rounded-full bg-status-green inline-block" />
                 YOUR TEAM
               </p>
-              {teamData.ally.map((p) => (
-                <PlayerCard key={p.puuid} player={p} agents={agents} tiers={tiers} isSelf={p.puuid === myPuuid} />
+              {teamData.ally.map((p, i) => (
+                <motion.div key={p.puuid} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15, delay: i * 0.04 }}>
+                <PlayerCard player={p} agents={agents} tiers={tiers} isSelf={p.puuid === myPuuid} />
+                </motion.div>
               ))}
             </div>
             <div className="space-y-1.5">
@@ -348,15 +380,19 @@ export default function MatchInfoPage({ henrikApiKey, player: selfPlayer, connec
                 <span className="w-2 h-2 rounded-full bg-val-red inline-block" />
                 ENEMY TEAM
               </p>
-              {teamData.enemy.map((p) => (
-                <PlayerCard key={p.puuid} player={p} agents={agents} tiers={tiers} isSelf={p.puuid === myPuuid} />
+              {teamData.enemy.map((p, i) => (
+                <motion.div key={p.puuid} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15, delay: i * 0.04 }}>
+                <PlayerCard player={p} agents={agents} tiers={tiers} isSelf={p.puuid === myPuuid} />
+                </motion.div>
               ))}
             </div>
           </div>
         ) : (
           <div className="space-y-1.5">
-            {teamData.all.map((p) => (
-              <PlayerCard key={p.puuid} player={p} agents={agents} tiers={tiers} isSelf={p.puuid === myPuuid} />
+            {teamData.all.map((p, i) => (
+              <motion.div key={p.puuid} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15, delay: i * 0.04 }}>
+              <PlayerCard player={p} agents={agents} tiers={tiers} isSelf={p.puuid === myPuuid} />
+              </motion.div>
             ))}
           </div>
         )}

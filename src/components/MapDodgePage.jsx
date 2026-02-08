@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { motion } from "framer-motion";
 
 const EXCLUDED_MAPS = ["The Range", "District", "Kasbah", "Drift", "Glitch", "Piazza", "Basic Training", "Skirmish A", "Skirmish B", "Skirmish C"];
 const CONFIG_KEY = "mapdodge-config";
@@ -74,8 +75,21 @@ export default function MapDodgePage({ onActiveChange, onBlacklistChange, connec
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-text-muted text-sm font-body">Loading maps...</div>
+      <div className="flex-1 flex flex-col min-h-0 p-4 gap-3">
+        <div className="flex items-center gap-2 shrink-0 animate-pulse">
+          <div className="h-8 w-44 rounded-lg bg-base-700" />
+          <div className="flex-1" />
+          <div className="h-4 w-24 rounded bg-base-700" />
+          <div className="h-5 w-9 rounded-full bg-base-700" />
+        </div>
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <div className="h-3 w-56 rounded bg-base-600 mb-3" />
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2 animate-pulse">
+            {Array.from({ length: 8 }, (_, i) => (
+              <div key={i} className="h-16 rounded-lg bg-base-700 border border-border" />
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -125,13 +139,14 @@ export default function MapDodgePage({ onActiveChange, onBlacklistChange, connec
           Click maps to blacklist — auto-dodge when matched
         </p>
         <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
-          {filteredMaps.map((map) => (
+          {filteredMaps.map((map, i) => (
+            <motion.div key={map.uuid} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15, delay: Math.min(i * 0.03, 0.3) }}>
             <MapDodgeCard
-              key={map.uuid}
               map={map}
               blacklisted={blacklist.has(map.mapUrl)}
               onClick={() => toggleMap(map.mapUrl)}
             />
+            </motion.div>
           ))}
         </div>
       </div>

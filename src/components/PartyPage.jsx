@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { motion, AnimatePresence } from "framer-motion";
 
 const POLL_INTERVAL = 3000;
 
@@ -18,7 +19,7 @@ const CrownIcon = ({ size = 14 }) => (
   </svg>
 );
 
-export default function PartyPage({ connected, addLog }) {
+export default function PartyPage({ connected, addLog, onRefresh }) {
   const [party, setParty] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -38,13 +39,21 @@ export default function PartyPage({ connected, addLog }) {
       if (cancelledRef.current) return;
       addLog?.("info", "[Party] Response", raw);
       const data = JSON.parse(raw);
+      if (!data.members || data.members.length === 0) {
+        throw new Error("Empty party data — token may be stale");
+      }
       data.members.sort((a, b) => (b.is_owner ? 1 : 0) - (a.is_owner ? 1 : 0));
       setParty(data);
       setError(null);
     } catch (e) {
       if (cancelledRef.current) return;
       const msg = typeof e === "string" ? e : e?.message || "Failed to fetch party";
-      addLog?.("error", "[Party] Error", msg);
+      addLog?.("error", `[Party] ${msg}`);
+      if (msg.includes("No party ID") || msg.includes("token may be stale")) {
+        addLog?.("info", "[Party] Bad data — refreshing token...");
+        onRefresh?.();
+        return;
+      }
       setError(msg);
     } finally {
       if (!cancelledRef.current) setLoading(false);
@@ -102,10 +111,26 @@ export default function PartyPage({ connected, addLog }) {
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center p-5">
-        <div className="flex items-center gap-2 text-text-muted">
-          <div className="w-4 h-4 border-2 border-val-red/30 border-t-val-red rounded-full animate-spin" />
-          <span className="text-sm font-body">Loading party...</span>
+      <div className="flex-1 flex flex-col min-h-0 p-5 gap-3 animate-pulse">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded bg-base-600" />
+            <div className="h-4 w-12 rounded bg-base-600" />
+            <div className="h-3 w-6 rounded bg-base-600" />
+          </div>
+          <div className="h-4 w-14 rounded bg-base-600" />
+        </div>
+        <div className="space-y-2">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-base-700 border border-border">
+              <div className="w-10 h-10 rounded-lg bg-base-600 shrink-0" />
+              <div className="flex-1 space-y-1.5">
+                <div className="h-3.5 w-28 rounded bg-base-600" />
+                <div className="h-2.5 w-16 rounded bg-base-600" />
+              </div>
+              <div className="h-5 w-16 rounded bg-base-600" />
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -221,20 +246,22 @@ export default function PartyPage({ connected, addLog }) {
       )}
 
       <div className="space-y-1.5">
-        {party.members.map((member) => (
+        {party.members.map((member, i) => (
+          <motion.div key={member.puuid} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, delay: i * 0.05 }}>
           <MemberCard
-            key={member.puuid}
             member={member}
             isLeader={isLeader}
             isMe={member.puuid === party.my_puuid}
             onKick={() => handleKick(member.puuid)}
           />
+          </motion.div>
         ))}
       </div>
 
+      <AnimatePresence>
       {queueError && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setQueueError(null)} onKeyDown={(e) => e.key === "Escape" && setQueueError(null)}>
-          <div className="bg-base-700 border border-border rounded-2xl p-5 w-80 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setQueueError(null)} onKeyDown={(e) => e.key === "Escape" && setQueueError(null)}>
+          <motion.div initial={{ opacity: 0, scale: 0.95, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 8 }} transition={{ duration: 0.15 }} className="bg-base-700 border border-border rounded-2xl p-5 w-80 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-2 mb-3">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-status-red shrink-0">
                 <circle cx="12" cy="12" r="10" />
@@ -249,13 +276,15 @@ export default function PartyPage({ connected, addLog }) {
             >
               OK
             </button>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
+      <AnimatePresence>
       {showJoin && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => { setShowJoin(false); setJoinCode(""); }}>
-          <div className="bg-base-700 border border-border rounded-xl p-5 w-80 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => { setShowJoin(false); setJoinCode(""); }}>
+          <motion.div initial={{ opacity: 0, scale: 0.95, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 8 }} transition={{ duration: 0.15 }} className="bg-base-700 border border-border rounded-xl p-5 w-80 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-sm font-display font-semibold text-text-primary mb-3">Join Party</h3>
             <input
               type="text"
@@ -270,9 +299,10 @@ export default function PartyPage({ connected, addLog }) {
               <button onClick={() => { setShowJoin(false); setJoinCode(""); }} className="flex-1 py-1.5 rounded-lg bg-base-600 border border-border text-xs font-body text-text-secondary hover:bg-base-500 transition-colors">Cancel</button>
               <button onClick={handleJoin} className="flex-1 py-1.5 rounded-lg bg-val-red/20 border border-val-red/40 text-xs font-display font-semibold text-val-red hover:bg-val-red/30 transition-colors">Join</button>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }

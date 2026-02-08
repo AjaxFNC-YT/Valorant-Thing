@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { motion } from "framer-motion";
 
 const TIER_UUID = "03621f52-342b-cf4e-4f86-9350a49c6d04";
 const rankIcon = (tier) => `https://media.valorant-api.com/competitivetiers/${TIER_UUID}/${tier}/smallicon.png`;
@@ -46,7 +47,7 @@ async function getMapData() {
   return mapCache;
 }
 
-export default function HomePage({ connected, player, refreshKey }) {
+export default function HomePage({ connected, player, refreshKey, onRefresh }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -55,6 +56,7 @@ export default function HomePage({ connected, player, refreshKey }) {
   const [matches, setMatches] = useState(null);
   const [matchLoading, setMatchLoading] = useState(false);
   const lastFetchRef = useRef(0);
+  const lastAutoRefresh = useRef(0);
 
   useEffect(() => { getMapData().then(setMaps); }, []);
 
@@ -64,14 +66,22 @@ export default function HomePage({ connected, player, refreshKey }) {
     setError(null);
     try {
       const raw = await invoke("get_home_stats", { queueFilter: "competitive" });
-      setStats(JSON.parse(raw));
+      const parsed = JSON.parse(raw);
+      if (!parsed.level && !parsed.currentTier && !parsed.totalGames) {
+        throw new Error("Empty stats returned — token may be stale");
+      }
+      setStats(parsed);
       lastFetchRef.current = Date.now();
       setTimeLeft(REFRESH_INTERVAL);
     } catch (e) {
       setError(typeof e === "string" ? e : e?.message || "Failed to load stats");
+      if (Date.now() - lastAutoRefresh.current > 30000) {
+        lastAutoRefresh.current = Date.now();
+        onRefresh?.();
+      }
     }
     setLoading(false);
-  }, [connected]);
+  }, [connected, onRefresh]);
 
   const fetchMatches = useCallback(async () => {
     if (!connected) return;
@@ -182,13 +192,24 @@ export default function HomePage({ connected, player, refreshKey }) {
         )}
 
         {loading && !stats && (
-          <div className="flex items-center justify-center py-12">
-            <div className="w-8 h-8 border-2 border-val-red/30 border-t-val-red rounded-full animate-spin" />
+          <div className="grid grid-cols-4 gap-3 animate-pulse">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="p-3 rounded-xl bg-base-700 border border-border space-y-2">
+                <div className="h-2.5 w-16 rounded bg-base-600" />
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-full bg-base-600" />
+                  <div className="space-y-1.5 flex-1">
+                    <div className="h-4 w-20 rounded bg-base-600" />
+                    <div className="h-3 w-12 rounded bg-base-600" />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
         {stats && (
-          <div className="grid grid-cols-4 gap-3">
+          <motion.div initial="hidden" animate="show" variants={{ hidden: {}, show: { transition: { staggerChildren: 0.06 } } }} className="grid grid-cols-4 gap-3">
             <StatCard label="Current Rank" loading={loading}>
               <div className="flex items-center gap-2.5">
                 <img src={rankIcon(currentTier)} alt="" className="w-10 h-10" />
@@ -215,19 +236,33 @@ export default function HomePage({ connected, player, refreshKey }) {
               <p className="text-xl font-display font-bold text-text-primary">{totalGames}</p>
               <p className="text-xs font-body text-text-muted">Competitive</p>
             </StatCard>
-          </div>
+          </motion.div>
         )}
 
         <h3 className="text-xs font-display font-semibold text-text-primary uppercase tracking-wider">Match History</h3>
 
         {matchLoading && !matches && (
-          <div className="flex items-center justify-center py-8">
-            <div className="w-6 h-6 border-2 border-val-red/30 border-t-val-red rounded-full animate-spin" />
+          <div className="space-y-1.5 animate-pulse">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-14 rounded-lg bg-base-700 border border-border flex items-center px-3 gap-3">
+                <div className="w-8 h-8 rounded-full bg-base-600 shrink-0" />
+                <div className="w-14 space-y-1">
+                  <div className="h-2.5 w-12 rounded bg-base-600" />
+                  <div className="h-3 w-8 rounded bg-base-600" />
+                </div>
+                <div className="h-3 w-16 rounded bg-base-600" />
+                <div className="ml-auto space-y-1 text-right">
+                  <div className="h-3 w-20 rounded bg-base-600" />
+                  <div className="h-2.5 w-12 rounded bg-base-600 ml-auto" />
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
         <div className={`space-y-1.5 ${matchLoading ? "opacity-60 pointer-events-none" : ""}`}>
           {(matches || []).map((m, i) => {
+            const delay = Math.min(i * 0.03, 0.5);
             const mapData = maps[m.map];
             const mapName = mapData?.name || m.map;
             const mapImg = mapData?.listIcon || mapData?.splash;
@@ -239,7 +274,7 @@ export default function HomePage({ connected, player, refreshKey }) {
             const kda = m.deaths > 0 ? ((m.kills + m.assists) / m.deaths).toFixed(1) : "Perfect";
 
             return (
-              <div key={i} className={`relative rounded-lg overflow-hidden border ${borderColor} h-14 group`}>
+              <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, delay }} className={`relative rounded-lg overflow-hidden border ${borderColor} h-14 group`}>
                 {mapImg && (
                   <img src={mapImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-20 group-hover:opacity-30 transition-opacity" />
                 )}
@@ -270,7 +305,7 @@ export default function HomePage({ connected, player, refreshKey }) {
                     </div>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             );
           })}
         </div>
@@ -281,9 +316,9 @@ export default function HomePage({ connected, player, refreshKey }) {
 
 function StatCard({ label, children, loading }) {
   return (
-    <div className={`p-3 rounded-xl bg-base-700 border border-border space-y-1.5 ${loading ? "opacity-60" : ""}`}>
+    <motion.div variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className={`p-3 rounded-xl bg-base-700 border border-border space-y-1.5 ${loading ? "opacity-60" : ""}`}>
       <p className="text-[10px] font-display font-medium text-text-muted uppercase tracking-wider">{label}</p>
       {children}
-    </div>
+    </motion.div>
   );
 }

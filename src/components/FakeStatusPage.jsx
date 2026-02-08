@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { motion } from "framer-motion";
 
 const TIER_UUID = "03621f52-342b-cf4e-4f86-9350a49c6d04";
 const rankIcon = (tier) => `https://media.valorant-api.com/competitivetiers/${TIER_UUID}/${tier}/smallicon.png`;
@@ -56,10 +57,38 @@ function Toggle({ enabled, onChange, disabled }) {
   );
 }
 
-function Field({ label, children }) {
+function NumInput({ value, onChange, className, ...props }) {
+  const [local, setLocal] = useState(String(value));
+  useEffect(() => { setLocal(String(value)); }, [value]);
+  return (
+    <input
+      type="number"
+      value={local}
+      onChange={e => {
+        setLocal(e.target.value);
+        if (e.target.value !== "") onChange(Number(e.target.value));
+      }}
+      onBlur={() => { if (local === "") { setLocal(String(value)); } }}
+      className={className}
+      {...props}
+    />
+  );
+}
+
+function Field({ label, children, tooltip }) {
   return (
     <div className="space-y-1">
-      <label className="text-[10px] font-body text-text-muted uppercase tracking-wider">{label}</label>
+      <div className="flex items-center gap-1">
+        <label className="text-[10px] font-body text-text-muted uppercase tracking-wider">{label}</label>
+        {tooltip && (
+          <div className="relative group">
+            <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-base-500/50 text-[8px] font-bold text-text-muted/70 cursor-help select-none leading-none">?</span>
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 rounded bg-base-900 border border-border text-[10px] font-body text-text-secondary whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 shadow-lg">
+              {tooltip}
+            </div>
+          </div>
+        )}
+      </div>
       {children}
     </div>
   );
@@ -192,6 +221,7 @@ function ApiSearch({ value, onChange, endpoint, nameKey, iconKey, placeholder })
   );
 }
 
+
 export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedChange }) {
   const [xmppStatus, setXmppStatus] = useState(null);
   const [active, setActive] = useState(false);
@@ -206,6 +236,7 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
   const sendRef = useRef(null);
   const presenceRef = useRef(null);
   const cancelRef = useRef(false);
+  const autoStarted = useRef(false);
 
   const defaultPresence = {
     sessionLoopState: "MENUS",
@@ -278,8 +309,16 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
     if (!hasResumed.current && xmppStatus?.connected) {
       hasResumed.current = true;
       setActive(true);
+      localStorage.setItem("fakestatus_enabled", "true");
     }
   }, [xmppStatus]);
+
+  useEffect(() => {
+    if (!autoStarted.current && connected && !active && !connecting && localStorage.getItem("fakestatus_enabled") === "true") {
+      autoStarted.current = true;
+      handleToggle(true);
+    }
+  }, [connected]);
 
   useEffect(() => {
     if (xmppStatus?.connected) {
@@ -302,7 +341,7 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
     if (enable) {
       cancelRef.current = false;
       setConnecting(true);
-      setConnectingMsg("Establishing XMPP connection...");
+      setConnectingMsg("Connecting to XMPP...");
       try {
         if (!xmppStatus?.connected) {
           await invoke("xmpp_connect");
@@ -311,13 +350,16 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
             setConnecting(false);
             return;
           }
+          setConnectingMsg("Fetching status...");
           await fetchStatus();
           await fetchLogs();
         }
         if (cancelRef.current) { setConnecting(false); return; }
+        setConnectingMsg("Sending presence...");
         await sendPresence(presenceRef.current);
         setSavedPresence({ ...presenceRef.current });
         setActive(true);
+        localStorage.setItem("fakestatus_enabled", "true");
       } catch (e) {
         const errMsg = typeof e === "string" ? e : e?.message || "Failed to enable";
         if (errMsg.toLowerCase().includes("jwt") || errMsg.toLowerCase().includes("token") || errMsg.includes("auth failed") || errMsg.includes("not-authorized")) {
@@ -333,11 +375,14 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
               setConnecting(false);
               return;
             }
+            setConnectingMsg("Fetching status...");
             await fetchStatus();
             await fetchLogs();
+            setConnectingMsg("Sending presence...");
             await sendPresence(presenceRef.current);
             setSavedPresence({ ...presenceRef.current });
             setActive(true);
+            localStorage.setItem("fakestatus_enabled", "true");
           } catch (retryErr) {
             setError("Token refresh failed: " + (typeof retryErr === "string" ? retryErr : retryErr?.message || "Unknown error"));
             await fetchLogs();
@@ -350,6 +395,7 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
       setConnecting(false);
     } else {
       setActive(false);
+      localStorage.removeItem("fakestatus_enabled");
       clearInterval(sendRef.current);
       try {
         await invoke("xmpp_disconnect");
@@ -401,7 +447,7 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
         <div className="text-center space-y-4">
           <div className="w-12 h-12 mx-auto border-2 border-val-red/30 border-t-val-red rounded-full animate-spin" />
           <div className="space-y-1">
-            <p className="text-sm font-display font-semibold text-white">Connecting</p>
+            <p className="text-sm font-display font-semibold text-white">Establishing Connection</p>
             <p className="text-xs font-body text-white/60">{connectingMsg}</p>
           </div>
           <button onClick={handleCancelConnect}
@@ -442,8 +488,8 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
       )}
 
       {!showLogs && (
-        <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-          <div className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
+        <motion.div initial="hidden" animate="show" variants={{ hidden: {}, show: { transition: { staggerChildren: 0.06 } } }} className="flex-1 overflow-y-auto space-y-3 pr-1">
+          <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
             <h3 className="text-xs font-display font-medium text-text-secondary uppercase tracking-wider">Rank & Identity</h3>
             <div className="grid grid-cols-3 gap-3">
               <Field label="Rank">
@@ -452,23 +498,23 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
                 />
               </Field>
               <Field label="Rank #">
-                <input type="number" min={0} value={presence.leaderboardPosition} onChange={e => update("leaderboardPosition", Number(e.target.value))} placeholder="0" className={inputClass} />
+                <NumInput value={presence.leaderboardPosition} onChange={v => update("leaderboardPosition", v)} placeholder="0" className={inputClass} />
               </Field>
               <Field label="Account Level">
-                <input type="number" min={1} max={999} value={presence.accountLevel} onChange={e => update("accountLevel", Number(e.target.value))} className={inputClass} />
+                <NumInput value={presence.accountLevel} onChange={v => update("accountLevel", v)} className={inputClass} />
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Card">
+              <Field label="Card" tooltip="Only visible to other players">
                 <ApiSearch value={presence.playerCardId} onChange={v => update("playerCardId", v)} endpoint="playercards" nameKey="displayName" iconKey="smallArt" placeholder="Search card..." />
               </Field>
-              <Field label="Nametag">
+              <Field label="Nametag" tooltip="Only visible to other players">
                 <ApiSearch value={presence.playerTitleId} onChange={v => update("playerTitleId", v)} endpoint="playertitles" nameKey="titleText" placeholder="Search title..." />
               </Field>
             </div>
-          </div>
+          </motion.div>
 
-          <div className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
+          <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
             <h3 className="text-xs font-display font-medium text-text-secondary uppercase tracking-wider">Game State</h3>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Session State">
@@ -484,23 +530,23 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Party Size">
-                <input type="number" min={0} max={5} value={presence.partySize} onChange={e => update("partySize", Math.min(5, Math.max(0, Number(e.target.value))))} className={inputClass} />
+                <NumInput value={presence.partySize} onChange={v => update("partySize", v)} className={inputClass} />
               </Field>
               <Field label="Max Party Size">
-                <input type="number" min={0} max={5} value={presence.maxPartySize} onChange={e => update("maxPartySize", Math.min(5, Math.max(0, Number(e.target.value))))} className={inputClass} />
+                <NumInput value={presence.maxPartySize} onChange={v => update("maxPartySize", v)} className={inputClass} />
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Team Score">
-                <input type="number" min={0} max={99} value={presence.partyOwnerMatchScoreAllyTeam} onChange={e => update("partyOwnerMatchScoreAllyTeam", Number(e.target.value))} className={inputClass} />
+                <NumInput value={presence.partyOwnerMatchScoreAllyTeam} onChange={v => update("partyOwnerMatchScoreAllyTeam", v)} className={inputClass} />
               </Field>
               <Field label="Enemy Score">
-                <input type="number" min={0} max={99} value={presence.partyOwnerMatchScoreEnemyTeam} onChange={e => update("partyOwnerMatchScoreEnemyTeam", Number(e.target.value))} className={inputClass} />
+                <NumInput value={presence.partyOwnerMatchScoreEnemyTeam} onChange={v => update("partyOwnerMatchScoreEnemyTeam", v)} className={inputClass} />
               </Field>
             </div>
-          </div>
+          </motion.div>
 
-          <div className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
+          <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
             <h3 className="text-xs font-display font-medium text-text-secondary uppercase tracking-wider">Premier</h3>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Division Style">
@@ -512,8 +558,8 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
                 <input value={presence.rosterName} onChange={e => update("rosterName", e.target.value)} placeholder="Team name..." className={inputClass} />
               </Field>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
 
       {showLogs && (

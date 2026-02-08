@@ -1,152 +1,77 @@
+import { motion, AnimatePresence } from "framer-motion";
 import PlayerInfo from "./PlayerInfo";
+
+function NavButton({ id, label, icon, activeTab, onTabChange, activeColor = "text-val-red" }) {
+  const isActive = activeTab === id;
+  return (
+    <button
+      onClick={() => onTabChange(id)}
+      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-body transition-colors duration-150 relative ${
+        isActive ? "text-text-primary" : "text-text-secondary hover:text-text-primary hover:bg-base-600/40"
+      }`}
+    >
+      {isActive && (
+        <motion.div
+          layoutId="sidebar-active"
+          className="absolute inset-0 rounded-lg bg-base-500/60"
+          transition={{ type: "spring", stiffness: 350, damping: 30 }}
+        />
+      )}
+      <span className={`relative z-10 ${isActive ? activeColor : "text-text-muted"}`}>{icon}</span>
+      <span className="relative z-10">{label}</span>
+    </button>
+  );
+}
 
 export default function Sidebar({ status, player, onReconnect, activeTab, onTabChange, showLogs, pregameMatchId, onDodge, simplifiedTheme = true }) {
   return (
     <div className={`w-52 border-r border-border flex flex-col shrink-0 relative ${simplifiedTheme ? "bg-base-700" : ""}`}>
       <nav className="p-2 pt-3 space-y-0.5">
-        <button
-          onClick={() => onTabChange("home")}
-          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-body transition-colors duration-150 ${
-            activeTab === "home"
-              ? "bg-base-500/60 text-text-primary"
-              : "text-text-secondary hover:text-text-primary hover:bg-base-600/40"
-          }`}
-        >
-          <span className={activeTab === "home" ? "text-val-red" : "text-text-muted"}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-              <polyline points="9 22 9 12 15 12 15 22" />
-            </svg>
-          </span>
-          Home
-        </button>
-        <button
-          onClick={() => onTabChange("instalock")}
-          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-body transition-colors duration-150 ${
-            activeTab === "instalock"
-              ? "bg-base-500/60 text-text-primary"
-              : "text-text-secondary hover:text-text-primary hover:bg-base-600/40"
-          }`}
-        >
-          <span className={activeTab === "instalock" ? "text-val-red" : "text-text-muted"}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-              <path d="M7 11V7a5 5 0 0110 0v4" />
-            </svg>
-          </span>
-          Instalock
-        </button>
-        <button
-          onClick={() => onTabChange("mapdodge")}
-          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-body transition-colors duration-150 ${
-            activeTab === "mapdodge"
-              ? "bg-base-500/60 text-text-primary"
-              : "text-text-secondary hover:text-text-primary hover:bg-base-600/40"
-          }`}
-        >
-          <span className={activeTab === "mapdodge" ? "text-val-red" : "text-text-muted"}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3V7z" />
-              <path d="M9 4v13M15 7v13" />
-            </svg>
-          </span>
-          Map Dodge
-        </button>
-        <button
-          onClick={() => onTabChange("matchinfo")}
-          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-body transition-colors duration-150 ${
-            activeTab === "matchinfo"
-              ? "bg-base-500/60 text-text-primary"
-              : "text-text-secondary hover:text-text-primary hover:bg-base-600/40"
-          }`}
-        >
-          <span className={activeTab === "matchinfo" ? "text-accent-blue" : "text-text-muted"}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M18 20V10M12 20V4M6 20v-6" />
-            </svg>
-          </span>
-          Match Info
-        </button>
-        <button
-          onClick={() => onTabChange("party")}
-          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-body transition-colors duration-150 ${
-            activeTab === "party"
-              ? "bg-base-500/60 text-text-primary"
-              : "text-text-secondary hover:text-text-primary hover:bg-base-600/40"
-          }`}
-        >
-          <span className={activeTab === "party" ? "text-val-red" : "text-text-muted"}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-              <path d="M22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
-            </svg>
-          </span>
-          Party
-        </button>
-        <button
-          onClick={() => onTabChange("misc")}
-          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-body transition-colors duration-150 ${
-            activeTab === "misc"
-              ? "bg-base-500/60 text-text-primary"
-              : "text-text-secondary hover:text-text-primary hover:bg-base-600/40"
-          }`}
-        >
-          <span className={activeTab === "misc" ? "text-val-red" : "text-text-muted"}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-            </svg>
-          </span>
-          Misc
-        </button>
-        <button
-          onClick={() => onTabChange("fakestatus")}
-          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-body transition-colors duration-150 ${
-            activeTab === "fakestatus"
-              ? "bg-base-500/60 text-text-primary"
-              : "text-text-secondary hover:text-text-primary hover:bg-base-600/40"
-          }`}
-        >
-          <span className={activeTab === "fakestatus" ? "text-val-red" : "text-text-muted"}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <circle cx="12" cy="12" r="2" />
-              <path d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49" />
-              <path d="M19.07 4.93a10 10 0 010 14.14m-14.14 0a10 10 0 010-14.14" />
-            </svg>
-          </span>
-          Fake Status
-        </button>
+        <NavButton id="home" label="Home" activeTab={activeTab} onTabChange={onTabChange}
+          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>}
+        />
+        <NavButton id="instalock" label="Instalock" activeTab={activeTab} onTabChange={onTabChange}
+          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0110 0v4" /></svg>}
+        />
+        <NavButton id="mapdodge" label="Map Dodge" activeTab={activeTab} onTabChange={onTabChange}
+          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3V7z" /><path d="M9 4v13M15 7v13" /></svg>}
+        />
+        <NavButton id="fakestatus" label="Fake Status" activeTab={activeTab} onTabChange={onTabChange}
+          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="2" /><path d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49" /><path d="M19.07 4.93a10 10 0 010 14.14m-14.14 0a10 10 0 010-14.14" /></svg>}
+        />
+        <NavButton id="party" label="Party" activeTab={activeTab} onTabChange={onTabChange}
+          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" /></svg>}
+        />
+        <NavButton id="matchinfo" label="Match Info" activeTab={activeTab} onTabChange={onTabChange} activeColor="text-accent-blue"
+          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M18 20V10M12 20V4M6 20v-6" /></svg>}
+        />
+        <NavButton id="misc" label="Misc" activeTab={activeTab} onTabChange={onTabChange}
+          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>}
+        />
         {showLogs && (
-          <button
-            onClick={() => onTabChange("logs")}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-body transition-colors duration-150 ${
-              activeTab === "logs"
-                ? "bg-base-500/60 text-text-primary"
-                : "text-text-secondary hover:text-text-primary hover:bg-base-600/40"
-            }`}
-          >
-            <span className={activeTab === "logs" ? "text-accent-blue" : "text-text-muted"}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-                <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
-              </svg>
-            </span>
-            Logs
-          </button>
+          <NavButton id="logs" label="Logs" activeTab={activeTab} onTabChange={onTabChange} activeColor="text-accent-blue"
+            icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" /></svg>}
+          />
         )}
       </nav>
 
       <div className="flex-1" />
 
       <div className="p-3 border-t border-border space-y-2">
+        <AnimatePresence>
         {pregameMatchId && (
-          <button
+          <motion.button
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
             onClick={onDodge}
             className="w-full py-1.5 rounded-lg bg-val-red/20 hover:bg-val-red/30 border border-val-red/40 text-val-red text-xs font-display font-semibold tracking-wide transition-colors duration-150"
           >
             Dodge
-          </button>
+          </motion.button>
         )}
+        </AnimatePresence>
         <div className="flex items-center gap-1.5">
           <PlayerInfo status={status} player={player} />
           <button

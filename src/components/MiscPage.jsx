@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { motion } from "framer-motion";
 
 export default function MiscPage({ connected, autoUnqueue, onAutoUnqueueChange, autoRequeue, onAutoRequeueChange }) {
   const [isLeader, setIsLeader] = useState(false);
@@ -29,14 +30,14 @@ export default function MiscPage({ connected, autoUnqueue, onAutoUnqueueChange, 
 
   return (
     <div className="flex-1 flex flex-col min-h-0 p-5 gap-4 overflow-y-auto">
-      <div className="flex items-center gap-2">
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="flex items-center gap-2">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted">
           <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
         </svg>
         <h2 className="text-sm font-display font-semibold text-text-primary">Misc</h2>
-      </div>
+      </motion.div>
 
-      <div className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, delay: 0.05 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
         <h3 className="text-xs font-display font-medium text-text-secondary uppercase tracking-wider">Queue Automation</h3>
 
         {disabled && connected && !loading && (
@@ -63,7 +64,7 @@ export default function MiscPage({ connected, autoUnqueue, onAutoUnqueueChange, 
           </div>
           <Toggle enabled={autoRequeue} onChange={onAutoRequeueChange} />
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

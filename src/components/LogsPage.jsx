@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState } from "react";
+import { motion } from "framer-motion";
 
 export default function LogsPage({ logs, onClear }) {
   const bottomRef = useRef(null);
@@ -40,7 +41,7 @@ export default function LogsPage({ logs, onClear }) {
         ) : (
           <div className="p-2 space-y-1">
             {logs.map((log, i) => (
-              <div key={i} onClick={() => handleCopy(log)} className="text-[11px] font-mono leading-relaxed cursor-pointer rounded px-1 -mx-1 hover:bg-base-600/50 transition-colors">
+              <motion.div key={i} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.15 }} onClick={() => handleCopy(log)} className="text-[11px] font-mono leading-relaxed cursor-pointer rounded px-1 -mx-1 hover:bg-base-600/50 transition-colors">
                 <span className="text-text-muted">[{log.time}]</span>{" "}
                 <span className={log.type === "error" ? "text-status-red" : log.type === "match" ? "text-status-green" : "text-text-secondary"}>
                   {log.type === "error" ? "ERR" : log.type === "match" ? "MATCH" : "INFO"}
@@ -51,7 +52,7 @@ export default function LogsPage({ logs, onClear }) {
                     {typeof log.data === "string" ? log.data : JSON.stringify(log.data, null, 2)}
                   </pre>
                 )}
-              </div>
+              </motion.div>
             ))}
             <div ref={bottomRef} />
           </div>

@@ -152,7 +152,7 @@ pub fn health_check(state: &Mutex<ConnectionState>) -> Option<PlayerInfo> {
     let needs_refresh = {
         let s = state.lock().ok()?;
         match s.token_fetched_at {
-            Some(t) => t.elapsed().as_secs() > 3300,
+            Some(t) => t.elapsed().as_secs() > 600,
             None => true,
         }
     };

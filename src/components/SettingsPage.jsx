@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { HexColorPicker, HexColorInput } from "react-colorful";
+import { motion } from "framer-motion";
 import { open } from "@tauri-apps/plugin-shell";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
@@ -44,6 +45,8 @@ function Toggle({ enabled, onChange }) {
 }
 
 function DelaySlider({ label, desc, value, onChange }) {
+  const [local, setLocal] = useState(String(value));
+  useEffect(() => { setLocal(String(value)); }, [value]);
   const clamp = (v) => Math.max(0, Math.min(10000, v));
   return (
     <div className="flex items-center justify-between">
@@ -64,11 +67,12 @@ function DelaySlider({ label, desc, value, onChange }) {
         <div className="flex items-center gap-1">
           <input
             type="number"
-            min={0}
-            max={10000}
-            step={100}
-            value={value}
-            onChange={(e) => onChange(clamp(parseInt(e.target.value, 10) || 0))}
+            value={local}
+            onChange={(e) => {
+              setLocal(e.target.value);
+              if (e.target.value !== "") onChange(clamp(parseInt(e.target.value, 10) || 0));
+            }}
+            onBlur={() => { if (local === "") setLocal(String(value)); }}
             className="w-14 px-1.5 py-0.5 rounded bg-base-600 border border-border text-text-primary text-xs text-right font-body tabular-nums outline-none focus:border-val-red/60 transition-colors [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
           />
           <span className="text-xs font-body text-text-muted">ms</span>
@@ -259,8 +263,8 @@ export default function SettingsPage({
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 p-5 gap-3 overflow-y-auto">
-      <div className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
+    <motion.div initial="hidden" animate="show" variants={{ hidden: {}, show: { transition: { staggerChildren: 0.04 } } }} className="flex-1 flex flex-col min-h-0 p-5 gap-3 overflow-y-auto">
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
         <div className="flex items-center gap-2">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted">
             <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
@@ -287,15 +291,15 @@ export default function SettingsPage({
             <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" />
           </svg>
         </button>
-      </div>
+      </motion.div>
 
-      <div className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
         <h2 className="text-sm font-display font-semibold text-text-primary">Timing</h2>
         <DelaySlider label="Select Delay" desc="Delay before selecting agent" value={selectDelay} onChange={onSelectDelayChange} />
         <DelaySlider label="Lock Delay" desc="Delay between select and lock" value={lockDelay} onChange={onLockDelayChange} />
-      </div>
+      </motion.div>
 
-      <div className="rounded-xl bg-base-700 border border-border divide-y divide-border">
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className="rounded-xl bg-base-700 border border-border divide-y divide-border">
         <div className="flex items-center justify-between p-4">
           <div>
             <p className="text-sm font-display font-medium text-text-primary">Start with Windows</p>
@@ -338,9 +342,9 @@ export default function SettingsPage({
           </div>
           <Toggle enabled={devMode} onChange={onDevModeChange} />
         </div>
-      </div>
+      </motion.div>
 
-      <div className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
         <h2 className="text-sm font-display font-semibold text-text-primary">Theme</h2>
         <div className="grid grid-cols-4 gap-2">
           {THEMES.map((t) => (
@@ -504,9 +508,9 @@ export default function SettingsPage({
           </div>
           <Toggle enabled={simplifiedTheme} onChange={onSimplifiedThemeChange} />
         </div>
-      </div>
+      </motion.div>
 
-      <div className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
         <h2 className="text-sm font-display font-semibold text-text-primary">Integrations</h2>
         <div className="flex items-center justify-between">
           <div>
@@ -515,9 +519,9 @@ export default function SettingsPage({
           </div>
           <Toggle enabled={discordRpc} onChange={onDiscordRpcChange} />
         </div>
-      </div>
+      </motion.div>
 
-      <div className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
         <h2 className="text-sm font-display font-semibold text-text-primary">Config</h2>
         <p className="text-xs font-body text-text-muted">Export or import your entire configuration including agents, maps, theme, and all settings.</p>
         <div className="flex items-center gap-2">
@@ -537,15 +541,15 @@ export default function SettingsPage({
           </button>
           <input ref={configFileRef} type="file" accept=".valthing" onChange={importConfig} className="hidden" />
         </div>
-      </div>
+      </motion.div>
 
-      <div className="p-4 rounded-xl bg-base-700 border border-border space-y-1">
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-1">
         <h2 className="text-sm font-display font-semibold text-text-primary">About</h2>
         <p className="text-xs font-body text-text-secondary">Valorant Thing v1.2.2</p>
         <p className="text-xs font-body text-text-muted">
           Created by AjaxFNC · Built with Rust & Tauri · Uses official Valorant APIs
         </p>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
