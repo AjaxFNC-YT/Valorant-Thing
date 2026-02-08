@@ -15,6 +15,9 @@
     "autostart:allow-disable",
     "autostart:allow-is-enabled",
     "shell:allow-open",
-    "notification:default"
+    "notification:default",
+    "dialog:default",
+    "fs:default",
+    "fs:allow-write-text-file"
   ]
 }

@@ -1,6 +1,6 @@
 [package]
 name = "valorant-app"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2021"
 
 [lib]
@@ -20,3 +20,6 @@ regex = "1"
 discord-rich-presence = "0.2"
 tauri-plugin-notification = "2"
 tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+native-tls = "0.2"

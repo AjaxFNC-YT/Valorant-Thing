@@ -10,6 +10,7 @@ import MapDodgePage from "./components/MapDodgePage";
 import MatchInfoPage from "./components/MatchInfoPage";
 import PartyPage from "./components/PartyPage";
 import MiscPage from "./components/MiscPage";
+import FakeStatusPage from "./components/FakeStatusPage";
 
 const CUSTOM_VARS = ['--base-900','--base-800','--base-700','--base-600','--base-500','--base-400','--border','--border-light','--val-red','--val-red-dark','--accent-blue','--accent-blue-dark'];
 
@@ -253,10 +254,12 @@ export default function App() {
     if (connectingRef.current) return;
     connectingRef.current = true;
     setStatus("connecting");
+    addLog("info", "[Connect] Attempting to connect to Riot Client...");
     try {
       const info = await invoke("connect");
       setPlayer(info);
       setStatus("connected");
+      addLog("info", `[Connect] Connected as ${info.game_name}#${info.game_tag} (${info.puuid?.slice(0,8)}...)`);
       if (info.rso_debug) {
         try { addLog("info", "RSO Userinfo (auth.riotgames.com/userinfo)", JSON.parse(info.rso_debug)); } catch { addLog("info", "RSO Userinfo", info.rso_debug); }
       }
@@ -264,6 +267,8 @@ export default function App() {
         try { addLog("info", "PD Player Loadout (playerloadout)", JSON.parse(info.loadout_debug)); } catch { addLog("info", "PD Player Loadout", info.loadout_debug); }
       }
     } catch (err) {
+      const errMsg = typeof err === "string" ? err : err?.message || String(err);
+      addLog("error", `[Connect] Failed: ${errMsg}`);
       console.error("[connect]", err);
       setStatus("waiting");
     } finally {
@@ -298,12 +303,19 @@ export default function App() {
   useEffect(() => {
     if (status !== "waiting") return;
     let cancelled = false;
+    addLog("info", "[Connect] Waiting for Valorant process...");
     const check = async () => {
       if (cancelled) return;
       try {
         const running = await invoke("is_valorant_running");
-        if (running && !cancelled) doConnect();
-      } catch {}
+        if (running && !cancelled) {
+          addLog("info", "[Connect] Valorant detected, connecting...");
+          doConnect();
+        }
+      } catch (err) {
+        const errMsg = typeof err === "string" ? err : err?.message || String(err);
+        addLog("error", `[Connect] is_valorant_running check failed: ${errMsg}`);
+      }
     };
     check();
     const timer = setInterval(check, RECONNECT_INTERVAL);
@@ -318,11 +330,13 @@ export default function App() {
         if (info) {
           setPlayer(info);
         } else {
-          console.warn("[health] Riot Client API died");
+          addLog("error", "[Health] Riot Client API returned null — connection lost");
           setPlayer(null);
           setStatus("waiting");
         }
-      } catch {
+      } catch (err) {
+        const errMsg = typeof err === "string" ? err : err?.message || String(err);
+        addLog("error", `[Health] Health check failed: ${errMsg}`);
         setPlayer(null);
         setStatus("waiting");
       }
@@ -566,6 +580,7 @@ export default function App() {
             />
           )}
           {activeTab === "party" && <PartyPage connected={status === "connected"} addLog={addLog} />}
+          {activeTab === "fakestatus" && <FakeStatusPage connected={status === "connected"} showLogsSetting={showLogs} />}
           {activeTab === "misc" && (
             <MiscPage
               connected={status === "connected"}

@@ -46,9 +46,7 @@ export default function Sidebar({ status, player, onReconnect, activeTab, onTabC
         >
           <span className={activeTab === "matchinfo" ? "text-accent-blue" : "text-text-muted"}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-              <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
+              <path d="M18 20V10M12 20V4M6 20v-6" />
             </svg>
           </span>
           Match Info
@@ -80,11 +78,27 @@ export default function Sidebar({ status, player, onReconnect, activeTab, onTabC
         >
           <span className={activeTab === "misc" ? "text-val-red" : "text-text-muted"}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
             </svg>
           </span>
           Misc
+        </button>
+        <button
+          onClick={() => onTabChange("fakestatus")}
+          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-body transition-colors duration-150 ${
+            activeTab === "fakestatus"
+              ? "bg-base-500/60 text-text-primary"
+              : "text-text-secondary hover:text-text-primary hover:bg-base-600/40"
+          }`}
+        >
+          <span className={activeTab === "fakestatus" ? "text-val-red" : "text-text-muted"}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <circle cx="12" cy="12" r="2" />
+              <path d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49" />
+              <path d="M19.07 4.93a10 10 0 010 14.14m-14.14 0a10 10 0 010-14.14" />
+            </svg>
+          </span>
+          Fake Status
         </button>
         {showLogs && (
           <button

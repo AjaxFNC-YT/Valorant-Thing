@@ -10,6 +10,7 @@ mod discord;
 
 type SharedState = Arc<Mutex<riot::ConnectionState>>;
 type DiscordShared = Arc<Mutex<discord::DiscordState>>;
+type XmppShared = Arc<Mutex<riot::xmpp::XmppState>>;
 
 #[tauri::command]
 async fn connect(state: tauri::State<'_, SharedState>) -> Result<riot::PlayerInfo, String> {
@@ -192,6 +193,73 @@ async fn update_discord_rpc(state: tauri::State<'_, DiscordShared>, details: Str
 }
 
 #[tauri::command]
+async fn xmpp_connect(xmpp: tauri::State<'_, XmppShared>, riot: tauri::State<'_, SharedState>) -> Result<String, String> {
+    let xmpp = Arc::clone(&xmpp);
+    let riot = Arc::clone(&riot);
+    tauri::async_runtime::spawn_blocking(move || riot::xmpp::xmpp_connect(&xmpp, &riot))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn xmpp_disconnect(state: tauri::State<'_, XmppShared>) -> Result<(), String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::xmpp::xmpp_disconnect(&state))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn xmpp_poll(state: tauri::State<'_, XmppShared>) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::xmpp::xmpp_poll(&state))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+fn xmpp_get_status(state: tauri::State<'_, XmppShared>) -> String {
+    riot::xmpp::xmpp_get_status(&state)
+}
+
+#[tauri::command]
+fn xmpp_get_logs(state: tauri::State<'_, XmppShared>) -> String {
+    riot::xmpp::xmpp_get_logs(&state)
+}
+
+#[tauri::command]
+async fn xmpp_send_fake_presence(state: tauri::State<'_, XmppShared>, presence_json: String) -> Result<(), String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::xmpp::xmpp_send_fake_presence(&state, &presence_json))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn xmpp_send_raw(state: tauri::State<'_, XmppShared>, data: String) -> Result<(), String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::xmpp::xmpp_send_raw(&state, &data))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn xmpp_check_local_presences(riot: tauri::State<'_, SharedState>) -> Result<String, String> {
+    let riot = Arc::clone(&riot);
+    tauri::async_runtime::spawn_blocking(move || riot::xmpp::xmpp_check_local_presences(&riot))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn local_api_discover(riot: tauri::State<'_, SharedState>) -> Result<String, String> {
+    let riot = Arc::clone(&riot);
+    tauri::async_runtime::spawn_blocking(move || riot::xmpp::local_api_discover(&riot))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
 fn exit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
@@ -251,12 +319,15 @@ pub fn run() {
     tauri::Builder::default()
         .manage(Arc::new(Mutex::new(riot::ConnectionState::default())))
         .manage(Arc::new(Mutex::new(discord::DiscordState::default())))
+        .manage(Arc::new(Mutex::new(riot::xmpp::XmppState::default())))
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             let show_item = MenuItemBuilder::with_id("show", "Show").build(app)?;
             let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
@@ -332,6 +403,15 @@ pub fn run() {
             update_discord_rpc,
             enter_queue,
             leave_queue,
+            xmpp_connect,
+            xmpp_disconnect,
+            xmpp_poll,
+            xmpp_get_status,
+            xmpp_get_logs,
+            xmpp_send_raw,
+            xmpp_send_fake_presence,
+            xmpp_check_local_presences,
+            local_api_discover,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -31,8 +31,7 @@ export default function MiscPage({ connected, autoUnqueue, onAutoUnqueueChange, 
     <div className="flex-1 flex flex-col min-h-0 p-5 gap-4 overflow-y-auto">
       <div className="flex items-center gap-2">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
         </svg>
         <h2 className="text-sm font-display font-semibold text-text-primary">Misc</h2>
       </div>

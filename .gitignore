@@ -4,4 +4,5 @@ target/
 .windsurf/
 .agents/
 val.md
+changelog.md
 *.js.map

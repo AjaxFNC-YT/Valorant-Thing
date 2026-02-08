@@ -3,6 +3,7 @@ mod http;
 mod process;
 mod connection;
 mod game;
+pub mod xmpp;
 
 pub use types::{ConnectionState, PlayerInfo};
 pub use http::henrik_api_get;

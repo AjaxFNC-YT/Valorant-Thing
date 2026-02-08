@@ -1,6 +1,8 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { HexColorPicker, HexColorInput } from "react-colorful";
 import { open } from "@tauri-apps/plugin-shell";
+import { save } from "@tauri-apps/plugin-dialog";
+import { writeTextFile } from "@tauri-apps/plugin-fs";
 
 const THEMES = [
   { id: "crimson-moon", name: "Crimson Moon", bg: "#1C1212", accent: "#ED4245", vars: {
@@ -126,7 +128,6 @@ function ColorSwatch({ color, onChange, className = "" }) {
               prefixed={false}
               className="flex-1 px-2 py-1 rounded-md bg-base-700 border border-border text-xs font-body text-text-primary outline-none focus:border-val-red/60 transition-colors uppercase tracking-wider"
             />
-            <span className="text-[10px] font-mono text-text-muted/60 select-all">{color.toUpperCase()}</span>
           </div>
         </div>
       )}
@@ -144,6 +145,7 @@ const CONFIG_KEYS = [
   "discord_rpc", "start_with_windows", "start_minimized", "minimize_to_tray",
   "henrik_api_key", "mapdodge-config", "auto_unqueue", "auto_requeue",
   "instalock_select_delay", "instalock_lock_delay", "instalock-config",
+  "fake-status-config",
 ];
 
 export default function SettingsPage({
@@ -190,19 +192,22 @@ export default function SettingsPage({
     e.target.value = "";
   };
 
-  const exportConfig = () => {
+  const exportConfig = async () => {
     const config = {};
     for (const key of CONFIG_KEYS) {
       const val = localStorage.getItem(key);
       if (val !== null) config[key] = val;
     }
-    const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "config.valthing";
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const path = await save({
+        defaultPath: "config.valthing",
+        filters: [{ name: "Valorant Thing Config", extensions: ["valthing"] }],
+      });
+      if (!path) return;
+      await writeTextFile(path, JSON.stringify(config, null, 2));
+    } catch (e) {
+      console.error("Export failed:", e);
+    }
   };
 
   const importConfig = (e) => {
@@ -520,7 +525,7 @@ export default function SettingsPage({
 
       <div className="p-4 rounded-xl bg-base-700 border border-border space-y-1">
         <h2 className="text-sm font-display font-semibold text-text-primary">About</h2>
-        <p className="text-xs font-body text-text-secondary">Valorant Thing v1.1.0</p>
+        <p className="text-xs font-body text-text-secondary">Valorant Thing v1.2.0</p>
         <p className="text-xs font-body text-text-muted">
           Created by AjaxFNC · Built with Rust & Tauri · Uses official Valorant APIs
         </p>
