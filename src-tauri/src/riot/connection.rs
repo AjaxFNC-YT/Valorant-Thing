@@ -232,14 +232,16 @@ fn validate_token(state: &Mutex<ConnectionState>) -> bool {
 }
 
 fn refresh_tokens(state: &Mutex<ConnectionState>) -> Result<(), String> {
-    let (port, local_auth) = {
-        let s = state.lock().map_err(|e| e.to_string())?;
-        (
-            s.port.ok_or("No port")?,
-            s.local_auth.clone().ok_or("No auth")?,
-        )
-    };
+    let (pid, port, password) = read_lockfile().map_err(|e| format!("lockfile re-read: {}", e))?;
+    if !is_pid_alive(pid) {
+        return Err(format!("Riot Client PID {} is dead", pid));
+    }
+    let local_auth = format!(
+        "Basic {}",
+        base64::engine::general_purpose::STANDARD.encode(format!("riot:{}", password))
+    );
 
+    eprintln!("[riot] refreshing tokens (port={}, pid={})...", port, pid);
     let tokens_raw = local_get(port, &local_auth, "/entitlements/v1/token")?;
     let tokens: serde_json::Value =
         serde_json::from_str(&tokens_raw).map_err(|e| format!("Parse tokens: {}", e))?;
@@ -248,10 +250,12 @@ fn refresh_tokens(state: &Mutex<ConnectionState>) -> Result<(), String> {
     let entitlements_jwt = tokens["token"].as_str().ok_or("No entitlements token")?.to_string();
 
     let mut s = state.lock().map_err(|e| e.to_string())?;
+    s.port = Some(port);
+    s.local_auth = Some(local_auth);
     s.access_token = Some(access_token);
     s.entitlements = Some(entitlements_jwt);
     s.token_fetched_at = Some(Instant::now());
-    eprintln!("[riot] tokens refreshed");
+    eprintln!("[riot] tokens refreshed successfully");
     Ok(())
 }
 

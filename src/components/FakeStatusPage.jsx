@@ -192,7 +192,7 @@ function ApiSearch({ value, onChange, endpoint, nameKey, iconKey, placeholder })
   );
 }
 
-export default function FakeStatusPage({ connected, showLogsSetting }) {
+export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedChange }) {
   const [xmppStatus, setXmppStatus] = useState(null);
   const [active, setActive] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -207,7 +207,7 @@ export default function FakeStatusPage({ connected, showLogsSetting }) {
   const presenceRef = useRef(null);
   const cancelRef = useRef(false);
 
-  const [presence, setPresence] = useState({
+  const defaultPresence = {
     sessionLoopState: "MENUS",
     queueId: "unrated",
     partyOwnerMatchScoreAllyTeam: 0,
@@ -221,18 +221,30 @@ export default function FakeStatusPage({ connected, showLogsSetting }) {
     rosterName: "",
     playerCardId: "",
     playerTitleId: "",
-  });
+  };
 
-  const update = (key, val) => setPresence(p => ({ ...p, [key]: val }));
-  presenceRef.current = presence;
-
-  useEffect(() => {
+  const initPresence = () => {
     const cfg = loadConfig();
     if (cfg) {
       const { showTag, premierTag, ...clean } = cfg;
-      setPresence(p => ({ ...p, ...clean }));
+      return { ...defaultPresence, ...clean };
     }
-  }, []);
+    return defaultPresence;
+  };
+
+  const [presence, setPresence] = useState(initPresence);
+  const [savedPresence, setSavedPresence] = useState(initPresence);
+  const savedPresenceRef = useRef(null);
+
+  const hasUnsaved = active && JSON.stringify(presence) !== JSON.stringify(savedPresence);
+
+  const update = (key, val) => setPresence(p => ({ ...p, [key]: val }));
+  presenceRef.current = presence;
+  savedPresenceRef.current = savedPresence;
+
+  useEffect(() => {
+    if (onUnsavedChange) onUnsavedChange(hasUnsaved);
+  }, [hasUnsaved]);
 
   useEffect(() => { saveConfig(presence); }, [presence]);
 
@@ -280,8 +292,8 @@ export default function FakeStatusPage({ connected, showLogsSetting }) {
     if (showLogs) logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs.length, showLogs]);
 
-  const sendPresence = async () => {
-    const data = { ...presenceRef.current, show: "chat" };
+  const sendPresence = async (override) => {
+    const data = { ...(override || savedPresenceRef.current), show: "chat" };
     await invoke("xmpp_send_fake_presence", { presenceJson: JSON.stringify(data) });
   };
 
@@ -303,7 +315,8 @@ export default function FakeStatusPage({ connected, showLogsSetting }) {
           await fetchLogs();
         }
         if (cancelRef.current) { setConnecting(false); return; }
-        await sendPresence();
+        await sendPresence(presenceRef.current);
+        setSavedPresence({ ...presenceRef.current });
         setActive(true);
       } catch (e) {
         const errMsg = typeof e === "string" ? e : e?.message || "Failed to enable";
@@ -322,7 +335,8 @@ export default function FakeStatusPage({ connected, showLogsSetting }) {
             }
             await fetchStatus();
             await fetchLogs();
-            await sendPresence();
+            await sendPresence(presenceRef.current);
+            setSavedPresence({ ...presenceRef.current });
             setActive(true);
           } catch (retryErr) {
             setError("Token refresh failed: " + (typeof retryErr === "string" ? retryErr : retryErr?.message || "Unknown error"));
@@ -364,11 +378,6 @@ export default function FakeStatusPage({ connected, showLogsSetting }) {
     return () => clearInterval(sendRef.current);
   }, [active, xmppStatus?.connected]);
 
-  useEffect(() => {
-    if (active && xmppStatus?.connected) {
-      sendPresence().then(() => startInterval()).catch(() => {});
-    }
-  }, [presence]);
 
   if (!connected) {
     return (
@@ -533,6 +542,33 @@ export default function FakeStatusPage({ connected, showLogsSetting }) {
                 </div>
               ))}
               <div ref={logEndRef} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {hasUnsaved && !showLogs && (
+        <div className="shrink-0 px-4 pb-3 pt-1">
+          <div className="flex items-center justify-between p-3 rounded-xl bg-base-600 border border-border">
+            <p className="text-xs font-body text-text-muted">You have unsaved changes</p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPresence(savedPresence)}
+                className="px-3 py-1.5 rounded-lg border border-border text-xs font-display font-medium text-text-muted hover:text-text-primary hover:border-text-muted/40 transition-colors bg-transparent"
+              >
+                Reset
+              </button>
+              <button
+                onClick={() => {
+                  setSavedPresence(presence);
+                  if (xmppStatus?.connected) {
+                    sendPresence(presence).catch(() => {});
+                  }
+                }}
+                className="px-3 py-1.5 rounded-lg border border-val-red/40 text-xs font-display font-semibold text-val-red hover:bg-val-red/10 transition-colors bg-transparent"
+              >
+                Save & Apply
+              </button>
             </div>
           </div>
         </div>

@@ -101,6 +101,14 @@ async fn coregame_quit(state: tauri::State<'_, SharedState>, match_id: String) -
 }
 
 #[tauri::command]
+async fn get_home_stats(state: tauri::State<'_, SharedState>, queue_filter: String) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::get_home_stats(&state, &queue_filter))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
 async fn get_owned_agents(state: tauri::State<'_, SharedState>) -> Result<Vec<String>, String> {
     let state = Arc::clone(&state);
     tauri::async_runtime::spawn_blocking(move || riot::get_owned_agents(&state))
@@ -340,14 +348,8 @@ async fn download_and_install_update(app: tauri::AppHandle, url: String, filenam
         let installer_str = installer_path.to_string_lossy().to_string();
         let bat_str = bat_path.to_string_lossy().to_string();
 
-        let script = format!(
-            r#"const https=require('https');const fs=require('fs');const f=fs.createWriteStream('{}');function dl(u){{https.get(u,{{headers:{{'User-Agent':'ValorantThing'}}}},res=>{{if(res.statusCode>=300&&res.statusCode<400&&res.headers.location){{dl(res.headers.location)}}else if(res.statusCode===200){{res.pipe(f);f.on('finish',()=>{{f.close();process.stdout.write('ok')}})}}else{{process.stderr.write('HTTP '+res.statusCode);process.exit(1)}}}})}};dl('{}')"#,
-            installer_str.replace('\\', "\\\\"),
-            url
-        );
-
-        let mut cmd = std::process::Command::new("node");
-        cmd.args(["-e", &script]);
+        let mut cmd = std::process::Command::new("curl");
+        cmd.args(["-L", "-o", &installer_str, "-A", "ValorantThing", "--fail", "--silent", "--show-error", &url]);
         #[cfg(target_os = "windows")]
         {
             use std::os::windows::process::CommandExt;
@@ -510,6 +512,7 @@ pub fn run() {
             get_owned_agents,
             get_token_age,
             get_player_mmr,
+            get_home_stats,
             resolve_player_names,
             henrik_get_account,
             henrik_get_mmr,

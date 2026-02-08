@@ -252,6 +252,32 @@ pub fn glz_post_body(region: &str, shard: &str, path: &str, body: &str, access_t
     Ok(body_out)
 }
 
+pub fn pd_batch_get(shard: &str, paths: &[String], access_token: &str, entitlements: &str, client_version: &str) -> Result<Vec<serde_json::Value>, String> {
+    if paths.is_empty() {
+        return Ok(vec![]);
+    }
+    let base_url = format!("https://pd.{}.a.pvp.net", shard);
+    let paths_json = serde_json::to_string(paths).map_err(|e| format!("json: {}", e))?;
+
+    let script = format!(
+        r#"const https=require('https');const zlib=require('zlib');const b='{}';const ps={};const h={{'Authorization':'Bearer {}','X-Riot-Entitlements-JWT':'{}','X-Riot-ClientPlatform':'{}','X-Riot-ClientVersion':'{}'}};function f(p){{return new Promise((ok,no)=>{{const u=new URL(b+p);const r=https.request({{hostname:u.hostname,path:u.pathname+u.search,headers:h}},res=>{{const c=[];res.on('data',d=>c.push(d));res.on('end',()=>{{let buf=Buffer.concat(c);const e=res.headers['content-encoding'];if(e==='gzip')try{{buf=zlib.gunzipSync(buf)}}catch(_){{}}else if(e==='deflate')try{{buf=zlib.inflateSync(buf)}}catch(_){{}};try{{ok(JSON.parse(buf.toString()))}}catch(_){{ok(null)}}}});}});r.on('error',()=>ok(null));r.setTimeout(15000,()=>{{r.destroy();ok(null)}});r.end()}})}};Promise.all(ps.map(p=>f(p))).then(r=>process.stdout.write(JSON.stringify(r)))"#,
+        base_url, paths_json, access_token, entitlements, PLATFORM, client_version
+    );
+
+    let mut cmd = Command::new("node");
+    cmd.args(["-e", &script]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+    let output = cmd.output().map_err(|e| format!("batch node failed: {}", e))?;
+
+    if !output.status.success() {
+        return Err(format!("batch fetch failed: {}", String::from_utf8_lossy(&output.stderr).trim()));
+    }
+
+    let body = String::from_utf8_lossy(&output.stdout).to_string();
+    serde_json::from_str(&body).map_err(|e| format!("parse batch: {}", e))
+}
+
 pub fn glz_post(region: &str, shard: &str, path: &str, access_token: &str, entitlements: &str, client_version: &str) -> Result<String, String> {
     let url = format!("https://glz-{}-1.{}.a.pvp.net{}", region, shard, path);
     let script = format!(

@@ -33,28 +33,50 @@ pub fn is_pid_alive(pid: u32) -> bool {
 }
 
 pub fn is_riot_client_running() -> bool {
+    match read_lockfile() {
+        Ok((pid, _, _)) => {
+            let alive = is_pid_alive(pid);
+            eprintln!("[process] riot client lockfile pid={} alive={}", pid, alive);
+            alive
+        }
+        Err(e) => {
+            eprintln!("[process] riot client lockfile failed: {}", e);
+            false
+        }
+    }
+}
+
+fn is_valorant_game_running() -> bool {
     let mut cmd = Command::new("tasklist");
-    cmd.args(["/FI", "IMAGENAME eq Riot Client.exe", "/NH"]);
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);
     match cmd.output() {
-        Ok(o) => String::from_utf8_lossy(&o.stdout).contains("Riot Client.exe"),
-        Err(_) => false,
+        Ok(o) => {
+            let out = String::from_utf8_lossy(&o.stdout).to_string();
+            let found = out.contains("VALORANT-Win64-Shi");
+            if !found {
+                let lower = out.to_lowercase();
+                if lower.contains("valorant") {
+                    eprintln!("[process] valorant game: exact not found but 'valorant' exists in tasklist");
+                } else {
+                    eprintln!("[process] valorant game: no valorant process found at all");
+                }
+            }
+            eprintln!("[process] valorant game found={}", found);
+            found
+        }
+        Err(e) => {
+            eprintln!("[process] valorant game tasklist error: {}", e);
+            false
+        }
     }
 }
 
 pub fn is_valorant_running() -> bool {
-    if is_riot_client_running() {
-        return true;
-    }
-    let mut cmd = Command::new("tasklist");
-    cmd.args(["/FI", "IMAGENAME eq VALORANT-Win64-Shipping.exe", "/NH"]);
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(0x08000000);
-    match cmd.output() {
-        Ok(o) => String::from_utf8_lossy(&o.stdout).contains("VALORANT-Win64-Shipping.exe"),
-        Err(_) => false,
-    }
+    let riot = is_riot_client_running();
+    let game = is_valorant_game_running();
+    eprintln!("[process] is_valorant_running: riot={} game={}", riot, game);
+    riot && game
 }
 
 pub fn parse_region_shard() -> Result<(String, String), String> {

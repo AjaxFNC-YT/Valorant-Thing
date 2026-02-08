@@ -108,8 +108,8 @@ All API calls happen in the **Rust backend** via Tauri commands - the React fron
 ### Setup
 
 ```bash
-git clone https://github.com/your-username/ValorantApp.git
-cd ValorantApp
+git clone https://github.com/AjaxFNC-YT/Valorant-Thing.git
+cd Valorant-Thing
 npm install
 ```
 

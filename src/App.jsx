@@ -11,6 +11,7 @@ import MatchInfoPage from "./components/MatchInfoPage";
 import PartyPage from "./components/PartyPage";
 import MiscPage from "./components/MiscPage";
 import FakeStatusPage from "./components/FakeStatusPage";
+import HomePage from "./components/HomePage";
 
 const CUSTOM_VARS = ['--base-900','--base-800','--base-700','--base-600','--base-500','--base-400','--border','--border-light','--val-red','--val-red-dark','--accent-blue','--accent-blue-dark'];
 
@@ -76,7 +77,7 @@ const MATCH_POLL_INTERVAL = 3000;
 export default function App() {
   const [status, setStatus] = useState("waiting");
   const [player, setPlayer] = useState(null);
-  const [activeTab, setActiveTab] = useState("instalock");
+  const [activeTab, setActiveTab] = useState("home");
   const [showLogs, setShowLogs] = useState(() => localStorage.getItem("show_logs") === "true");
   const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem("app_theme");
@@ -92,9 +93,11 @@ export default function App() {
   const [startWithWindows, setStartWithWindows] = useState(() => localStorage.getItem("start_with_windows") === "true");
   const [startMinimized, setStartMinimized] = useState(() => localStorage.getItem("start_minimized") === "true");
   const [minimizeToTray, setMinimizeToTray] = useState(() => localStorage.getItem("minimize_to_tray") === "true");
+  const [closeWithGame, setCloseWithGame] = useState(() => localStorage.getItem("close_with_game") === "true");
   const [nodeInstalled, setNodeInstalled] = useState(true);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [updating, setUpdating] = useState(false);
+  const [fakeStatusUnsaved, setFakeStatusUnsaved] = useState(false);
   const [logs, setLogs] = useState([]);
   const [instalockActive, setInstalockActive] = useState(false);
   const [henrikApiKey, setHenrikApiKey] = useState(() => localStorage.getItem("henrik_api_key") || "");
@@ -105,6 +108,7 @@ export default function App() {
     } catch { return false; }
   });
   const [pregameMatchId, setPregameMatchId] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [autoUnqueue, setAutoUnqueue] = useState(() => localStorage.getItem("auto_unqueue") === "true");
   const [autoRequeue, setAutoRequeue] = useState(() => localStorage.getItem("auto_requeue") === "true");
   const [selectDelay, setSelectDelay] = useState(() => {
@@ -159,6 +163,27 @@ export default function App() {
       } catch {}
     }).catch(() => {});
   }, []);
+
+  const closeWithGameRef = useRef(closeWithGame);
+  const wasConnectedRef = useRef(false);
+  useEffect(() => { closeWithGameRef.current = closeWithGame; localStorage.setItem("close_with_game", String(closeWithGame)); }, [closeWithGame]);
+  useEffect(() => { if (status === "connected") wasConnectedRef.current = true; }, [status]);
+
+  useEffect(() => {
+    if (!closeWithGame) return;
+    if (status !== "connected" && status !== "waiting") return;
+    if (status === "waiting" && !wasConnectedRef.current) return;
+    const id = setInterval(async () => {
+      if (!closeWithGameRef.current) return;
+      try {
+        const running = await invoke("is_valorant_running");
+        if (!running) {
+          await invoke("exit_app");
+        }
+      } catch {}
+    }, 10000);
+    return () => clearInterval(id);
+  }, [closeWithGame, status]);
 
   useEffect(() => { mapDodgeActiveRef.current = mapDodgeActive; }, [mapDodgeActive]);
   useEffect(() => { autoUnqueueRef.current = autoUnqueue; localStorage.setItem("auto_unqueue", String(autoUnqueue)); }, [autoUnqueue]);
@@ -275,6 +300,7 @@ export default function App() {
       const info = await invoke("connect");
       setPlayer(info);
       setStatus("connected");
+      setRefreshKey(k => k + 1);
       addLog("info", `[Connect] Connected as ${info.game_name}#${info.game_tag} (${info.puuid?.slice(0,8)}...)`);
       if (info.rso_debug) {
         try { addLog("info", "RSO Userinfo (auth.riotgames.com/userinfo)", JSON.parse(info.rso_debug)); } catch { addLog("info", "RSO Userinfo", info.rso_debug); }
@@ -567,7 +593,7 @@ export default function App() {
       )}
       {updateInfo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="max-w-sm p-6 rounded-xl bg-base-700 border border-border shadow-2xl text-center space-y-4">
+          <div className="max-w-md w-full p-6 rounded-xl bg-base-700 border border-border shadow-2xl text-center space-y-4">
             <div className="w-14 h-14 mx-auto rounded-full bg-accent-blue/15 border border-accent-blue/30 flex items-center justify-center">
               {updating ? (
                 <div className="w-7 h-7 border-2 border-accent-blue/30 border-t-accent-blue rounded-full animate-spin" />
@@ -609,13 +635,16 @@ export default function App() {
           player={player}
           onReconnect={handleRefreshClick}
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={(tab) => { if (fakeStatusUnsaved && activeTab === "fakestatus" && tab !== "fakestatus") return; setActiveTab(tab); }}
           showLogs={showLogs}
           pregameMatchId={pregameMatchId}
           onDodge={handleDodge}
           simplifiedTheme={simplifiedTheme}
         />
         <main className="flex-1 flex min-h-0">
+          {activeTab === "home" && (
+            <HomePage connected={status === "connected"} player={player} refreshKey={refreshKey} />
+          )}
           {activeTab === "instalock" && (
             <InstalockPage
               onActiveChange={setInstalockActive}
@@ -664,10 +693,12 @@ export default function App() {
               onCustomThemeChange={setCustomTheme}
               discordRpc={discordRpc}
               onDiscordRpcChange={setDiscordRpc}
+              closeWithGame={closeWithGame}
+              onCloseWithGameChange={(v) => { setCloseWithGame(v); localStorage.setItem("close_with_game", String(v)); }}
             />
           )}
           {activeTab === "party" && <PartyPage connected={status === "connected"} addLog={addLog} />}
-          {activeTab === "fakestatus" && <FakeStatusPage connected={status === "connected"} showLogsSetting={showLogs} />}
+          {activeTab === "fakestatus" && <FakeStatusPage connected={status === "connected"} showLogsSetting={showLogs} onUnsavedChange={setFakeStatusUnsaved} />}
           {activeTab === "misc" && (
             <MiscPage
               connected={status === "connected"}

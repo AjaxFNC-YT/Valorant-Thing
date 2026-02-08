@@ -160,6 +160,7 @@ export default function SettingsPage({
   simplifiedTheme, onSimplifiedThemeChange,
   customTheme, onCustomThemeChange,
   discordRpc, onDiscordRpcChange,
+  closeWithGame, onCloseWithGameChange,
 }) {
   const fileRef = useRef(null);
   const configFileRef = useRef(null);
@@ -321,6 +322,13 @@ export default function SettingsPage({
             <p className="text-xs font-body text-text-muted mt-0.5">Show API polling logs in a separate tab</p>
           </div>
           <Toggle enabled={showLogs} onChange={onShowLogsChange} />
+        </div>
+        <div className="flex items-center justify-between p-4">
+          <div>
+            <p className="text-sm font-display font-medium text-text-primary">Close with Game</p>
+            <p className="text-xs font-body text-text-muted mt-0.5">Auto-close when Valorant and Riot Client are both closed</p>
+          </div>
+          <Toggle enabled={closeWithGame} onChange={onCloseWithGameChange} />
         </div>
       </div>
 
@@ -525,7 +533,7 @@ export default function SettingsPage({
 
       <div className="p-4 rounded-xl bg-base-700 border border-border space-y-1">
         <h2 className="text-sm font-display font-semibold text-text-primary">About</h2>
-        <p className="text-xs font-body text-text-secondary">Valorant Thing v1.2.0</p>
+        <p className="text-xs font-body text-text-secondary">Valorant Thing v1.2.2</p>
         <p className="text-xs font-body text-text-muted">
           Created by AjaxFNC · Built with Rust & Tauri · Uses official Valorant APIs
         </p>
