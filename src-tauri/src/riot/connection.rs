@@ -5,9 +5,10 @@ use std::time::Instant;
 use super::types::{ConnectionState, PlayerInfo};
 use super::http::{local_get, https_get, authed_get, pd_get};
 use super::process::{read_lockfile, is_pid_alive, is_riot_client_running, parse_region_shard};
+use super::logging::{log_info, log_error};
 
 pub fn connect_and_store(state: &Mutex<ConnectionState>) -> Result<PlayerInfo, String> {
-    eprintln!("[riot] reading lockfile...");
+    log_info("[Connect] Reading lockfile...");
     let (pid, port, password) = read_lockfile()?;
 
     if !is_pid_alive(pid) {
@@ -19,7 +20,7 @@ pub fn connect_and_store(state: &Mutex<ConnectionState>) -> Result<PlayerInfo, S
         base64::engine::general_purpose::STANDARD.encode(format!("riot:{}", password))
     );
 
-    eprintln!("[riot] fetching entitlements (port={}, pid={})...", port, pid);
+    log_info(&format!("[Connect] Fetching entitlements (port={}, pid={})...", port, pid));
     let tokens_raw = match local_get(port, &local_auth, "/entitlements/v1/token") {
         Ok(r) => r,
         Err(e) if e.contains("ECONNREFUSED") || e.contains("connect ECONNREFUSED") => {
@@ -42,9 +43,9 @@ pub fn connect_and_store(state: &Mutex<ConnectionState>) -> Result<PlayerInfo, S
         .as_str()
         .ok_or("No subject/puuid")?
         .to_string();
-    eprintln!("[riot] got tokens, puuid={}", puuid);
+    log_info(&format!("[Connect] Got tokens, puuid={}", puuid));
 
-    eprintln!("[riot] fetching account info...");
+    log_info("[Connect] Fetching account info...");
     let mut game_name = String::from("Unknown");
     let mut game_tag = String::from("0000");
     let mut rso_debug: Option<String> = None;
@@ -60,13 +61,11 @@ pub fn connect_and_store(state: &Mutex<ConnectionState>) -> Result<PlayerInfo, S
                 }
             }
         }
-        Err(e) => eprintln!("[riot] userinfo failed: {}", e),
+        Err(e) => log_error(&format!("[Connect] userinfo failed: {}", e)),
     }
-    eprintln!("[riot] player={}#{}", game_name, game_tag);
+    log_info(&format!("[Connect] player={}#{}", game_name, game_tag));
 
-    eprintln!("[riot] parsing region/shard...");
     let (region, shard) = parse_region_shard()?;
-    eprintln!("[riot] region={}, shard={}", region, shard);
 
     let client_version = match https_get("https://valorant-api.com/v1/version") {
         Ok(body) => {
@@ -81,7 +80,7 @@ pub fn connect_and_store(state: &Mutex<ConnectionState>) -> Result<PlayerInfo, S
         }
         Err(_) => "unknown".to_string(),
     };
-    eprintln!("[riot] version={}", client_version);
+    log_info(&format!("[Connect] version={}", client_version));
 
     let mut player_card_url: Option<String> = None;
     let mut loadout_debug: Option<String> = None;
@@ -95,11 +94,11 @@ pub fn connect_and_store(state: &Mutex<ConnectionState>) -> Result<PlayerInfo, S
                         "https://media.valorant-api.com/playercards/{}/smallart.png",
                         card_id
                     ));
-                    eprintln!("[riot] player card: {}", card_id);
+                    log_info(&format!("[Connect] player card: {}", card_id));
                 }
             }
         }
-        Err(e) => eprintln!("[riot] loadout failed: {}", e),
+        Err(e) => log_error(&format!("[Connect] loadout failed: {}", e)),
     }
 
     let info = PlayerInfo {
@@ -129,7 +128,7 @@ pub fn connect_and_store(state: &Mutex<ConnectionState>) -> Result<PlayerInfo, S
     s.player_card_url = player_card_url;
     s.token_fetched_at = Some(Instant::now());
 
-    eprintln!("[riot] connected successfully");
+    log_info("[Connect] Connected successfully");
     Ok(info)
 }
 
@@ -145,7 +144,7 @@ pub fn health_check(state: &Mutex<ConnectionState>) -> Option<PlayerInfo> {
     }
 
     if !is_riot_client_running() {
-        eprintln!("[riot] Riot Client not running, disconnecting");
+        log_error("[Health] Riot Client not running, disconnecting");
         disconnect(state);
         return None;
     }
@@ -159,9 +158,9 @@ pub fn health_check(state: &Mutex<ConnectionState>) -> Option<PlayerInfo> {
     };
 
     if needs_refresh {
-        eprintln!("[riot] token expired (age), refreshing...");
+        log_info("[Health] Token expired, refreshing...");
         if let Err(e) = refresh_tokens(state) {
-            eprintln!("[riot] token refresh failed: {}, disconnecting", e);
+            log_error(&format!("[Health] Token refresh failed: {}, disconnecting", e));
             disconnect(state);
             return None;
         }
@@ -180,18 +179,18 @@ pub fn health_check(state: &Mutex<ConnectionState>) -> Option<PlayerInfo> {
             s.last_token_check = Some(Instant::now());
         }
         if !validate_token(state) {
-            eprintln!("[riot] token validation failed, refreshing...");
+            log_error("[Health] Token validation failed, refreshing...");
             if let Err(e) = refresh_tokens(state) {
-                eprintln!("[riot] token refresh also failed: {}, disconnecting", e);
+                log_error(&format!("[Health] Token refresh also failed: {}, disconnecting", e));
                 disconnect(state);
                 return None;
             }
             if !validate_token(state) {
-                eprintln!("[riot] token still invalid after refresh, disconnecting");
+                log_error("[Health] Token still invalid after refresh, disconnecting");
                 disconnect(state);
                 return None;
             }
-            eprintln!("[riot] token refreshed and validated successfully");
+            log_info("[Health] Token refreshed and validated successfully");
         }
     }
 
@@ -215,17 +214,17 @@ fn validate_token(state: &Mutex<ConnectionState>) -> bool {
     match pd_get(&shard, &path, &access_token, &entitlements, &client_version) {
         Ok(body) => {
             if body.contains("CREDENTIALS_INVALID") || body.contains("\"httpStatus\":401") {
-                eprintln!("[riot] token check: CREDENTIALS_INVALID");
+                log_error("[Health] Token check: CREDENTIALS_INVALID");
                 return false;
             }
             true
         }
         Err(e) => {
             if e.contains("401") || e.contains("CREDENTIALS_INVALID") {
-                eprintln!("[riot] token check error: {}", e);
+                log_error(&format!("[Health] Token check error: {}", e));
                 return false;
             }
-            eprintln!("[riot] token check request failed: {} (network issue, keeping token)", e);
+            log_error(&format!("[Health] Token check request failed: {} (network issue, keeping token)", e));
             true
         }
     }
@@ -241,7 +240,7 @@ fn refresh_tokens(state: &Mutex<ConnectionState>) -> Result<(), String> {
         base64::engine::general_purpose::STANDARD.encode(format!("riot:{}", password))
     );
 
-    eprintln!("[riot] refreshing tokens (port={}, pid={})...", port, pid);
+    log_info(&format!("[Health] Refreshing tokens (port={}, pid={})...", port, pid));
     let tokens_raw = local_get(port, &local_auth, "/entitlements/v1/token")?;
     let tokens: serde_json::Value =
         serde_json::from_str(&tokens_raw).map_err(|e| format!("Parse tokens: {}", e))?;
@@ -255,7 +254,7 @@ fn refresh_tokens(state: &Mutex<ConnectionState>) -> Result<(), String> {
     s.access_token = Some(access_token);
     s.entitlements = Some(entitlements_jwt);
     s.token_fetched_at = Some(Instant::now());
-    eprintln!("[riot] tokens refreshed successfully");
+    log_info("[Health] Tokens refreshed successfully");
     Ok(())
 }
 

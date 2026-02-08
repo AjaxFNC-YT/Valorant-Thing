@@ -140,9 +140,6 @@ pub fn pd_get(shard: &str, path: &str, access_token: &str, entitlements: &str, c
     let output = cmd.output().map_err(|e| format!("node failed: {}", e))?;
 
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    if !stderr.is_empty() {
-        eprintln!("[pd_get] {} -> {}", path, stderr.trim());
-    }
 
     if !output.status.success() {
         return Err(format!("{}: {}", path, stderr.trim()));
@@ -243,8 +240,6 @@ pub fn glz_post_body(region: &str, shard: &str, path: &str, body: &str, access_t
 
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     let body_out = String::from_utf8_lossy(&output.stdout).to_string();
-    eprintln!("[glz_post_body] {} -> {} body={}", path, stderr.trim(), &body_out[..body_out.len().min(200)]);
-
     if !output.status.success() {
         return Err(format!("{}: {}", path, stderr.trim()));
     }
@@ -293,8 +288,6 @@ pub fn glz_post(region: &str, shard: &str, path: &str, access_token: &str, entit
 
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     let body = String::from_utf8_lossy(&output.stdout).to_string();
-    eprintln!("[glz_post] {} -> {} body={}", path, stderr.trim(), &body[..body.len().min(200)]);
-
     if !output.status.success() {
         return Err(format!("{}: {}", path, stderr.trim()));
     }

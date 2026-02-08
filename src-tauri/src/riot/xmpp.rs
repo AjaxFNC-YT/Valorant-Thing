@@ -104,7 +104,7 @@ fn now_ms() -> u64 {
 }
 
 fn add_log(logs: &mut Vec<XmppLog>, direction: &str, data: &str) {
-    eprintln!("[xmpp] {} {}", direction, &data[..data.len().min(300)]);
+    super::logging::log_info(&format!("[XMPP] {} {}", direction, &data[..data.len().min(300)]));
     logs.push(XmppLog {
         direction: direction.to_string(),
         data: data.to_string(),

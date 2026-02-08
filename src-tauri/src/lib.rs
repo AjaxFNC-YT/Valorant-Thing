@@ -109,6 +109,22 @@ async fn get_home_stats(state: tauri::State<'_, SharedState>, queue_filter: Stri
 }
 
 #[tauri::command]
+async fn check_loadout(state: tauri::State<'_, SharedState>) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::check_loadout(&state))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn get_match_page(state: tauri::State<'_, SharedState>, page: u64, page_size: u64) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::get_match_page(&state, page, page_size))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
 async fn get_owned_agents(state: tauri::State<'_, SharedState>) -> Result<Vec<String>, String> {
     let state = Arc::clone(&state);
     tauri::async_runtime::spawn_blocking(move || riot::get_owned_agents(&state))
@@ -450,6 +466,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
+            riot::logging::init(app.handle().clone());
             let show_item = MenuItemBuilder::with_id("show", "Show").build(app)?;
             let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
             let menu = MenuBuilder::new(app)
@@ -513,6 +530,8 @@ pub fn run() {
             get_token_age,
             get_player_mmr,
             get_home_stats,
+            check_loadout,
+            get_match_page,
             resolve_player_names,
             henrik_get_account,
             henrik_get_mmr,

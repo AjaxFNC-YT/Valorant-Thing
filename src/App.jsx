@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import InstalockPage from "./components/InstalockPage";
@@ -285,8 +286,20 @@ export default function App() {
 
   const addLog = useCallback((type, message, data) => {
     const time = new Date().toLocaleTimeString();
-    setLogs((prev) => [...prev.slice(-200), { time, type, message, data }]);
+    setLogs((prev) => {
+      const last = prev[prev.length - 1];
+      if (last && last.message === message) return prev;
+      return [...prev.slice(-200), { time, type, message, data }];
+    });
   }, []);
+
+  useEffect(() => {
+    const unlisten = listen("backend-log", (event) => {
+      const { log_type, message } = event.payload;
+      addLog(log_type || "info", message);
+    });
+    return () => { unlisten.then(fn => fn()); };
+  }, [addLog]);
 
   const [showRefreshModal, setShowRefreshModal] = useState(false);
   const [tokenAge, setTokenAge] = useState(0);
@@ -381,6 +394,12 @@ export default function App() {
         addLog("error", `[Health] Health check failed: ${errMsg}`);
         setPlayer(null);
         setStatus("waiting");
+      }
+      try {
+        await invoke("check_loadout");
+      } catch (err) {
+        const errMsg = typeof err === "string" ? err : err?.message || String(err);
+        addLog("error", `[Loadout] PD loadout check failed: ${errMsg}`);
       }
     };
     const timer = setInterval(check, HEALTH_CHECK_INTERVAL);

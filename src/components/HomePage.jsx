@@ -19,18 +19,6 @@ const RANKS = [
 
 const rankName = (tier) => RANKS.find(r => r.tier === tier)?.name || "Unranked";
 
-const MODES = [
-  { id: "overall", label: "Overall" },
-  { id: "competitive", label: "Competitive" },
-  { id: "unrated", label: "Unrated" },
-  { id: "swiftplay", label: "Swiftplay" },
-  { id: "spikerush", label: "Spike Rush" },
-  { id: "deathmatch", label: "Deathmatch" },
-  { id: "hurm", label: "Team Deathmatch" },
-  { id: "ggteam", label: "Escalation" },
-  { id: "onefa", label: "Replication" },
-];
-
 const REFRESH_INTERVAL = 5 * 60 * 1000;
 
 function formatTimer(ms) {
@@ -40,34 +28,70 @@ function formatTimer(ms) {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
+let mapCache = null;
+async function getMapData() {
+  if (mapCache) return mapCache;
+  try {
+    const res = await fetch("https://valorant-api.com/v1/maps");
+    const json = await res.json();
+    const lookup = {};
+    for (const m of json.data || []) {
+      const key = m.mapUrl?.split("/").pop();
+      if (key) lookup[key] = { name: m.displayName, splash: m.splash, listIcon: m.listViewIcon };
+    }
+    mapCache = lookup;
+  } catch {
+    mapCache = {};
+  }
+  return mapCache;
+}
+
 export default function HomePage({ connected, player, refreshKey }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [mode, setMode] = useState("competitive");
   const [timeLeft, setTimeLeft] = useState(REFRESH_INTERVAL);
+  const [maps, setMaps] = useState({});
+  const [matches, setMatches] = useState(null);
+  const [matchLoading, setMatchLoading] = useState(false);
   const lastFetchRef = useRef(0);
-  const timerRef = useRef(null);
 
-  const fetchStats = useCallback(async (queueFilter) => {
+  useEffect(() => { getMapData().then(setMaps); }, []);
+
+  const fetchStats = useCallback(async () => {
     if (!connected) return;
     setLoading(true);
     setError(null);
     try {
-      const raw = await invoke("get_home_stats", { queueFilter: queueFilter || mode });
-      const data = JSON.parse(raw);
-      setStats(data);
+      const raw = await invoke("get_home_stats", { queueFilter: "competitive" });
+      setStats(JSON.parse(raw));
       lastFetchRef.current = Date.now();
       setTimeLeft(REFRESH_INTERVAL);
     } catch (e) {
       setError(typeof e === "string" ? e : e?.message || "Failed to load stats");
     }
     setLoading(false);
-  }, [connected, mode]);
+  }, [connected]);
+
+  const fetchMatches = useCallback(async () => {
+    if (!connected) return;
+    setMatchLoading(true);
+    try {
+      const raw = await invoke("get_match_page", { page: 0, pageSize: 25 });
+      const data = JSON.parse(raw);
+      setMatches(data.matches || []);
+    } catch (e) {
+      console.error("[matches] fetch failed:", e);
+    }
+    setMatchLoading(false);
+  }, [connected]);
 
   useEffect(() => {
-    if (connected) fetchStats(mode);
-  }, [connected, mode, refreshKey]);
+    if (connected) {
+      fetchStats();
+      fetchMatches();
+    }
+  }, [connected, refreshKey]);
 
   useEffect(() => {
     if (!connected) return;
@@ -75,14 +99,14 @@ export default function HomePage({ connected, player, refreshKey }) {
       const elapsed = Date.now() - lastFetchRef.current;
       const remaining = REFRESH_INTERVAL - elapsed;
       if (remaining <= 0) {
-        fetchStats(mode);
+        fetchStats();
+        fetchMatches();
       } else {
         setTimeLeft(remaining);
       }
     }, 1000);
-    timerRef.current = id;
     return () => clearInterval(id);
-  }, [connected, mode, fetchStats]);
+  }, [connected, fetchStats]);
 
   if (!connected) {
     return (
@@ -111,8 +135,6 @@ export default function HomePage({ connected, player, refreshKey }) {
   const totalPlayed = wins + losses;
   const winRate = totalPlayed > 0 ? Math.round((wins / totalPlayed) * 100) : 0;
   const totalGames = stats?.totalGames || 0;
-  const fetchedGames = stats?.fetchedGames || 0;
-  const source = stats?.source || "history";
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
@@ -130,7 +152,7 @@ export default function HomePage({ connected, player, refreshKey }) {
             <span className="text-[10px] font-mono text-text-muted tabular-nums">{formatTimer(timeLeft)}</span>
           </div>
           <button
-            onClick={() => fetchStats(mode)}
+            onClick={() => { fetchStats(); fetchMatches(page); }}
             disabled={loading}
             className="p-1.5 rounded-md bg-black/40 backdrop-blur-sm text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
           >
@@ -155,22 +177,6 @@ export default function HomePage({ connected, player, refreshKey }) {
       </div>
 
       <div className="p-4 space-y-3">
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-          {MODES.map(m => (
-            <button
-              key={m.id}
-              onClick={() => setMode(m.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-display font-medium whitespace-nowrap transition-colors ${
-                mode === m.id
-                  ? "bg-val-red/15 text-val-red border border-val-red/30"
-                  : "bg-base-700 text-text-muted border border-border hover:text-text-secondary hover:border-border-light"
-              }`}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-
         {error && (
           <div className="px-3 py-2 rounded-lg bg-status-red/10 border border-status-red/20 text-xs font-body text-status-red">{error}</div>
         )}
@@ -207,45 +213,67 @@ export default function HomePage({ connected, player, refreshKey }) {
 
             <StatCard label="Total Games" loading={loading}>
               <p className="text-xl font-display font-bold text-text-primary">{totalGames}</p>
-              <p className="text-xs font-body text-text-muted">
-                {source === "history" && fetchedGames < totalGames
-                  ? `Last ${fetchedGames} analyzed`
-                  : mode === "competitive" ? "Competitive" : "All time"
-                }
-              </p>
+              <p className="text-xs font-body text-text-muted">Competitive</p>
             </StatCard>
           </div>
         )}
 
-        {stats?.recentMatches?.length > 0 && (
-          <div className="space-y-1">
-            <h3 className="text-xs font-display font-semibold text-text-primary uppercase tracking-wider pb-1">Recent Matches</h3>
-            <div className="rounded-xl bg-base-700 border border-border divide-y divide-border overflow-hidden">
-              {stats.recentMatches.map((m, i) => {
-                const result = m.won ? "W" : "L";
-                const resultColor = m.won ? "text-green-400" : "text-red-400";
-                const barColor = m.won ? "bg-green-400" : "bg-red-400";
-                const score = `${m.roundsWon}-${m.roundsLost}`;
-                return (
-                  <div key={i} className="flex items-center px-3 py-2 gap-3">
-                    <div className={`w-0.5 h-8 rounded-full shrink-0 ${barColor}`} />
-                    <span className={`text-xs font-display font-bold w-4 shrink-0 ${resultColor}`}>{result}</span>
-                    <span className="text-xs font-display font-medium text-text-primary w-16 shrink-0">{m.map}</span>
-                    <span className="text-xs font-mono text-text-muted w-10 shrink-0">{score}</span>
-                    <div className="flex items-center gap-1 text-xs font-mono">
-                      <span className="text-text-primary">{m.kills}</span>
-                      <span className="text-text-muted">/</span>
-                      <span className="text-red-400">{m.deaths}</span>
-                      <span className="text-text-muted">/</span>
-                      <span className="text-text-muted">{m.assists}</span>
-                    </div>
-                    <div className="ml-auto text-[10px] font-mono text-text-muted tabular-nums">{m.score}</div>
-                  </div>
-                );
-              })}
-            </div>
+        <h3 className="text-xs font-display font-semibold text-text-primary uppercase tracking-wider">Match History</h3>
+
+        {matchLoading && !matches && (
+          <div className="flex items-center justify-center py-8">
+            <div className="w-6 h-6 border-2 border-val-red/30 border-t-val-red rounded-full animate-spin" />
           </div>
         )}
+
+        <div className={`space-y-1.5 ${matchLoading ? "opacity-60 pointer-events-none" : ""}`}>
+          {(matches || []).map((m, i) => {
+            const mapData = maps[m.map];
+            const mapName = mapData?.name || m.map;
+            const mapImg = mapData?.listIcon || mapData?.splash;
+            const draw = m.roundsWon === m.roundsLost;
+            const resultText = draw ? "DRAW" : m.won ? "VICTORY" : "DEFEAT";
+            const resultColor = draw ? "text-text-muted" : m.won ? "text-green-400" : "text-red-400";
+            const borderColor = draw ? "border-text-muted/20" : m.won ? "border-green-500/20" : "border-red-500/20";
+            const agentIcon = m.agent ? `https://media.valorant-api.com/agents/${m.agent}/displayicon.png` : null;
+            const kda = m.deaths > 0 ? ((m.kills + m.assists) / m.deaths).toFixed(1) : "Perfect";
+
+            return (
+              <div key={i} className={`relative rounded-lg overflow-hidden border ${borderColor} h-14 group`}>
+                {mapImg && (
+                  <img src={mapImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-20 group-hover:opacity-30 transition-opacity" />
+                )}
+                <div className="absolute inset-0 bg-gradient-to-r from-base-900/90 via-base-900/70 to-base-900/50" />
+
+                <div className="relative h-full flex items-center px-3 gap-3">
+                  {agentIcon && (
+                    <img src={agentIcon} alt="" className="w-8 h-8 rounded-full border border-white/10 shrink-0" />
+                  )}
+
+                  <div className="w-16 shrink-0">
+                    <p className={`text-[10px] font-display font-bold uppercase tracking-wide ${resultColor}`}>{resultText}</p>
+                    <p className="text-xs font-mono text-text-muted">{m.roundsWon}-{m.roundsLost}</p>
+                  </div>
+
+                  <p className="text-xs font-display font-medium text-text-primary w-20 shrink-0">{mapName}</p>
+
+                  <div className="flex items-center gap-3 ml-auto">
+                    <div className="text-right">
+                      <div className="flex items-center gap-0.5 text-xs font-mono">
+                        <span className="text-text-primary font-semibold">{m.kills}</span>
+                        <span className="text-text-muted">/</span>
+                        <span className="text-red-400 font-semibold">{m.deaths}</span>
+                        <span className="text-text-muted">/</span>
+                        <span className="text-text-muted">{m.assists}</span>
+                      </div>
+                      <p className="text-[10px] font-mono text-text-muted">{kda} KDA</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
