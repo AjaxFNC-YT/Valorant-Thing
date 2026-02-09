@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="app-icon.png" width="80" />
+  <img src="src-tauri\icons\icon.png" width="80" />
 </p>
 
 <h1 align="center">Valorant Thing</h1>
