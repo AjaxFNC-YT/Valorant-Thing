@@ -1,0 +1,57 @@
+name: Tauri Build & Test
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-test:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        # You can add windows-latest or macos-latest here too
+        platform: [ubuntu-22.04]
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # 1. Install Linux dependencies (Only needed for Ubuntu)
+      - name: install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      # 2. Setup Node.js (for the frontend)
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      # 3. Setup Rust
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      # 4. Cache Rust dependencies to speed up future builds
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      # 5. Install Frontend dependencies
+      # Use 'npm install', 'yarn install', or 'pnpm install'
+      - name: install frontend dependencies
+        run: npm install 
+
+      # 6. Build the app using the Tauri Action
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Use 'args: --debug' if you just want to test without a full release build
+          args: ""
