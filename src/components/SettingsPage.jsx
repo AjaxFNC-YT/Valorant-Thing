@@ -5,6 +5,8 @@ import { open } from "@tauri-apps/plugin-shell";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 
+const noAnim = () => localStorage.getItem("disable_animations") === "true";
+const T0 = { duration: 0 };
 const THEMES = [
   { id: "crimson-moon", name: "Crimson Moon", bg: "#1C1212", accent: "#ED4245", vars: {
     '--base-900':'16 10 10','--base-800':'28 18 18','--base-700':'34 24 24','--base-600':'44 32 32','--base-500':'56 42 42','--base-400':'68 54 54','--border':'80 62 62','--border-light':'96 76 76','--val-red':'237 66 69','--val-red-dark':'200 50 55','--accent-blue':'237 66 69','--accent-blue-dark':'200 50 55',
@@ -166,6 +168,7 @@ export default function SettingsPage({
   discordRpc, onDiscordRpcChange,
   closeWithGame, onCloseWithGameChange,
   devMode, onDevModeChange,
+  disableAnimations, onDisableAnimationsChange,
 }) {
   const fileRef = useRef(null);
   const configFileRef = useRef(null);
@@ -263,8 +266,8 @@ export default function SettingsPage({
   };
 
   return (
-    <motion.div initial="hidden" animate="show" variants={{ hidden: {}, show: { transition: { staggerChildren: 0.04 } } }} className="flex-1 flex flex-col min-h-0 p-5 gap-3 overflow-y-auto">
-      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
+    <motion.div initial="hidden" animate="show" variants={{ hidden: {}, show: { transition: { staggerChildren: noAnim() ? 0 : 0.04 } } }} className="flex-1 flex flex-col min-h-0 p-5 gap-3 overflow-y-auto">
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
         <div className="flex items-center gap-2">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted">
             <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
@@ -293,13 +296,13 @@ export default function SettingsPage({
         </button>
       </motion.div>
 
-      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
         <h2 className="text-sm font-display font-semibold text-text-primary">Timing</h2>
         <DelaySlider label="Select Delay" desc="Delay before selecting agent" value={selectDelay} onChange={onSelectDelayChange} />
         <DelaySlider label="Lock Delay" desc="Delay between select and lock" value={lockDelay} onChange={onLockDelayChange} />
       </motion.div>
 
-      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className="rounded-xl bg-base-700 border border-border divide-y divide-border">
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="rounded-xl bg-base-700 border border-border divide-y divide-border">
         <div className="flex items-center justify-between p-4">
           <div>
             <p className="text-sm font-display font-medium text-text-primary">Start with Windows</p>
@@ -337,6 +340,13 @@ export default function SettingsPage({
         </div>
         <div className="flex items-center justify-between p-4">
           <div>
+            <p className="text-sm font-display font-medium text-text-primary">Disable Animations</p>
+            <p className="text-xs font-body text-text-muted mt-0.5">Turn off all UI transitions and animations</p>
+          </div>
+          <Toggle enabled={disableAnimations} onChange={onDisableAnimationsChange} />
+        </div>
+        <div className="flex items-center justify-between p-4">
+          <div>
             <p className="text-sm font-display font-medium text-text-primary">Developer Mode</p>
             <p className="text-xs font-body text-text-muted mt-0.5">Enable inspect element (Ctrl+Shift+I)</p>
           </div>
@@ -344,7 +354,7 @@ export default function SettingsPage({
         </div>
       </motion.div>
 
-      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
         <h2 className="text-sm font-display font-semibold text-text-primary">Theme</h2>
         <div className="grid grid-cols-4 gap-2">
           {THEMES.map((t) => (
@@ -510,7 +520,7 @@ export default function SettingsPage({
         </div>
       </motion.div>
 
-      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
         <h2 className="text-sm font-display font-semibold text-text-primary">Integrations</h2>
         <div className="flex items-center justify-between">
           <div>
@@ -521,7 +531,7 @@ export default function SettingsPage({
         </div>
       </motion.div>
 
-      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
         <h2 className="text-sm font-display font-semibold text-text-primary">Config</h2>
         <p className="text-xs font-body text-text-muted">Export or import your entire configuration including agents, maps, theme, and all settings.</p>
         <div className="flex items-center gap-2">
@@ -543,7 +553,7 @@ export default function SettingsPage({
         </div>
       </motion.div>
 
-      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-1">
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-1">
         <h2 className="text-sm font-display font-semibold text-text-primary">About</h2>
         <p className="text-xs font-body text-text-secondary">Valorant Thing v1.2.2</p>
         <p className="text-xs font-body text-text-muted">

@@ -41,6 +41,30 @@ fn is_valorant_running() -> bool {
 }
 
 #[tauri::command]
+fn find_valorant_path() -> Result<String, String> {
+    riot::find_valorant_path()
+}
+
+#[tauri::command]
+fn compute_file_hash(path: String) -> Result<String, String> {
+    use std::hash::{Hash, Hasher};
+    use std::collections::hash_map::DefaultHasher;
+    let data = std::fs::read(&path).map_err(|e| format!("read {}: {}", path, e))?;
+    let mut hasher = DefaultHasher::new();
+    data.hash(&mut hasher);
+    Ok(format!("{:x}", hasher.finish()))
+}
+
+#[tauri::command]
+fn force_copy_file(source: String, dest: String) -> Result<(), String> {
+    if let Some(parent) = std::path::Path::new(&dest).parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {}", parent.display(), e))?;
+    }
+    std::fs::copy(&source, &dest).map_err(|e| format!("copy {} -> {}: {}", source, dest, e))?;
+    Ok(())
+}
+
+#[tauri::command]
 fn toggle_devtools(app: tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         if window.is_devtools_open() {
@@ -527,6 +551,9 @@ pub fn run() {
             get_status,
             get_player,
             is_valorant_running,
+            find_valorant_path,
+            compute_file_hash,
+            force_copy_file,
             toggle_devtools,
             check_node_installed,
             health_check,

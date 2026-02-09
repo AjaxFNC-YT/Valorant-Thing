@@ -458,7 +458,7 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
         </div>
       </div>
     )}
-    <div className="flex-1 flex flex-col min-h-0 p-4 gap-3">
+    <div className="flex-1 flex flex-col min-h-0 p-4 gap-3 relative">
       <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted">
@@ -594,8 +594,8 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
       )}
 
       {hasUnsaved && !showLogs && (
-        <div className="shrink-0 px-4 pb-3 pt-1">
-          <div className="flex items-center justify-between p-3 rounded-xl bg-base-600 border border-border">
+        <div className="absolute bottom-3 left-4 right-4 z-10">
+          <div className="flex items-center justify-between p-3 rounded-xl bg-base-600/95 backdrop-blur-sm border border-border shadow-lg">
             <p className="text-xs font-body text-text-muted">You have unsaved changes</p>
             <div className="flex items-center gap-2">
               <button

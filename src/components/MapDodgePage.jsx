@@ -3,6 +3,8 @@ import { motion } from "framer-motion";
 
 const EXCLUDED_MAPS = ["The Range", "District", "Kasbah", "Drift", "Glitch", "Piazza", "Basic Training", "Skirmish A", "Skirmish B", "Skirmish C"];
 const CONFIG_KEY = "mapdodge-config";
+const noAnim = () => localStorage.getItem("disable_animations") === "true";
+const T0 = { duration: 0 };
 
 const SEARCH_ICON = (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -140,7 +142,7 @@ export default function MapDodgePage({ onActiveChange, onBlacklistChange, connec
         </p>
         <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
           {filteredMaps.map((map, i) => (
-            <motion.div key={map.uuid} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15, delay: Math.min(i * 0.03, 0.3) }}>
+            <motion.div key={map.uuid} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={noAnim() ? T0 : { duration: 0.15, delay: Math.min(i * 0.03, 0.3) }}>
             <MapDodgeCard
               map={map}
               blacklisted={blacklist.has(map.mapUrl)}

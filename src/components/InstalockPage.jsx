@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
 
 const EXCLUDED_MAPS = ["The Range", "District", "Kasbah", "Drift", "Glitch", "Piazza", "Basic Training", "Skirmish A", "Skirmish B", "Skirmish C"];
+const noAnim = () => localStorage.getItem("disable_animations") === "true";
+const T0 = { duration: 0 };
 
 
 const GLOBE_ICON = (
@@ -303,7 +305,7 @@ function AllMapsView({ agents, selectedAgent, onAgentClick, isOwned }) {
       </p>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1.5">
         {agents.map((agent, i) => (
-          <motion.div key={agent.uuid} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.15, delay: Math.min(i * 0.02, 0.4) }}>
+          <motion.div key={agent.uuid} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={noAnim() ? T0 : { duration: 0.15, delay: Math.min(i * 0.02, 0.4) }}>
           <AgentCard
             agent={agent}
             selected={selectedAgent?.uuid === agent.uuid}
@@ -331,7 +333,7 @@ function PerMapView({ agents, maps, search, selectedMap, onMapSelect, onMapBack,
         </p>
         <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
           {filtered.map((map, i) => (
-            <motion.div key={map.uuid} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15, delay: Math.min(i * 0.03, 0.3) }}>
+            <motion.div key={map.uuid} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={noAnim() ? T0 : { duration: 0.15, delay: Math.min(i * 0.03, 0.3) }}>
             <MapCard
               map={map}
               selectedAgent={getAgentForMap(map.uuid)}

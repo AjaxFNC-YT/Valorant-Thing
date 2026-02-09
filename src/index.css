@@ -242,3 +242,11 @@ input[type="color"]::-webkit-color-swatch {
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 6px;
 }
+
+.no-animations *,
+.no-animations *::before,
+.no-animations *::after {
+  transition-duration: 0s !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+}

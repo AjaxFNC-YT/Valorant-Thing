@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
 
 const TIER_UUID = "03621f52-342b-cf4e-4f86-9350a49c6d04";
+const noAnim = () => localStorage.getItem("disable_animations") === "true";
+const T0 = { duration: 0 };
 const rankIcon = (tier) => `https://media.valorant-api.com/competitivetiers/${TIER_UUID}/${tier}/smallicon.png`;
 
 const RANKS = [
@@ -282,7 +284,7 @@ export default function HomePage({ connected, player, refreshKey, onRefresh }) {
             const kda = m.deaths > 0 ? ((m.kills + m.assists) / m.deaths).toFixed(1) : "Perfect";
 
             return (
-              <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, delay }} className={`relative rounded-lg overflow-hidden border ${borderColor} h-14 group`}>
+              <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={noAnim() ? T0 : { duration: 0.2, delay }} className={`relative rounded-lg overflow-hidden border ${borderColor} h-14 group`}>
                 {mapImg && (
                   <img src={mapImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-20 group-hover:opacity-30 transition-opacity" />
                 )}

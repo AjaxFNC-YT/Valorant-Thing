@@ -2,6 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion, AnimatePresence } from "framer-motion";
 
+const noAnim = () => localStorage.getItem("disable_animations") === "true";
+const T0 = { duration: 0 };
+
 const POLL_INTERVAL = 3000;
 
 const UsersIcon = ({ size = 16, className = "" }) => (
@@ -247,7 +250,7 @@ export default function PartyPage({ connected, addLog, onRefresh }) {
 
       <div className="space-y-1.5">
         {party.members.map((member, i) => (
-          <motion.div key={member.puuid} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, delay: i * 0.05 }}>
+          <motion.div key={member.puuid} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={noAnim() ? T0 : { duration: 0.2, delay: i * 0.05 }}>
           <MemberCard
             member={member}
             isLeader={isLeader}

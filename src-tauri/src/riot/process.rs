@@ -54,6 +54,23 @@ pub fn is_valorant_running() -> bool {
     is_riot_client_running() && is_valorant_game_running()
 }
 
+pub fn find_valorant_path() -> Result<String, String> {
+    let programdata = std::env::var("ALLUSERSPROFILE").unwrap_or_else(|_| "C:\\ProgramData".to_string());
+    let settings_path = format!("{}\\Riot Games\\Metadata\\valorant.live\\valorant.live.product_settings.yaml", programdata);
+    let contents = std::fs::read_to_string(&settings_path)
+        .map_err(|_| "Could not read Valorant product settings. Is Valorant installed?".to_string())?;
+    for line in contents.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("product_install_full_path:") {
+            let val = trimmed.trim_start_matches("product_install_full_path:").trim().trim_matches('"');
+            if !val.is_empty() {
+                return Ok(val.to_string());
+            }
+        }
+    }
+    Err("Could not find Valorant install path in product settings".to_string())
+}
+
 pub fn parse_region_shard() -> Result<(String, String), String> {
     let local_app_data =
         std::env::var("LOCALAPPDATA").map_err(|_| "LOCALAPPDATA not found".to_string())?;

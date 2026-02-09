@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
 
 const AGENT_MAP_URL = "https://valorant-api.com/v1/agents?isPlayableCharacter=true";
+const noAnim = () => localStorage.getItem("disable_animations") === "true";
+const T0 = { duration: 0 };
 const COMP_TIERS_URL = "https://valorant-api.com/v1/competitivetiers";
 const MAPS_URL = "https://valorant-api.com/v1/maps";
 const POLL_INTERVAL = 5000;
@@ -370,7 +372,7 @@ export default function MatchInfoPage({ henrikApiKey, player: selfPlayer, connec
                 YOUR TEAM
               </p>
               {teamData.ally.map((p, i) => (
-                <motion.div key={p.puuid} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15, delay: i * 0.04 }}>
+                <motion.div key={p.puuid} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={noAnim() ? T0 : { duration: 0.15, delay: i * 0.04 }}>
                 <PlayerCard player={p} agents={agents} tiers={tiers} isSelf={p.puuid === myPuuid} />
                 </motion.div>
               ))}
@@ -381,7 +383,7 @@ export default function MatchInfoPage({ henrikApiKey, player: selfPlayer, connec
                 ENEMY TEAM
               </p>
               {teamData.enemy.map((p, i) => (
-                <motion.div key={p.puuid} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15, delay: i * 0.04 }}>
+                <motion.div key={p.puuid} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={noAnim() ? T0 : { duration: 0.15, delay: i * 0.04 }}>
                 <PlayerCard player={p} agents={agents} tiers={tiers} isSelf={p.puuid === myPuuid} />
                 </motion.div>
               ))}
@@ -390,7 +392,7 @@ export default function MatchInfoPage({ henrikApiKey, player: selfPlayer, connec
         ) : (
           <div className="space-y-1.5">
             {teamData.all.map((p, i) => (
-              <motion.div key={p.puuid} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15, delay: i * 0.04 }}>
+              <motion.div key={p.puuid} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={noAnim() ? T0 : { duration: 0.15, delay: i * 0.04 }}>
               <PlayerCard player={p} agents={agents} tiers={tiers} isSelf={p.puuid === myPuuid} />
               </motion.div>
             ))}

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import InstalockPage from "./components/InstalockPage";
@@ -97,6 +97,7 @@ export default function App() {
   const [minimizeToTray, setMinimizeToTray] = useState(() => localStorage.getItem("minimize_to_tray") === "true");
   const [closeWithGame, setCloseWithGame] = useState(() => localStorage.getItem("close_with_game") === "true");
   const [devMode, setDevMode] = useState(() => localStorage.getItem("dev_mode") === "true");
+  const [disableAnimations, setDisableAnimations] = useState(() => localStorage.getItem("disable_animations") === "true");
   const [nodeInstalled, setNodeInstalled] = useState(true);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [updating, setUpdating] = useState(false);
@@ -285,6 +286,11 @@ export default function App() {
   useEffect(() => { lockDelayRef.current = lockDelay; localStorage.setItem("instalock_lock_delay", lockDelay); }, [lockDelay]);
 
   useEffect(() => {
+    document.documentElement.classList.toggle("no-animations", disableAnimations);
+    localStorage.setItem("disable_animations", String(disableAnimations));
+  }, [disableAnimations]);
+
+  useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("app_theme", theme);
     if (theme !== "custom") {
@@ -426,6 +432,17 @@ export default function App() {
         const errMsg = typeof err === "string" ? err : err?.message || String(err);
         addLog("error", `[Loadout] PD loadout check failed: ${errMsg}`);
       }
+      try {
+        const raw = localStorage.getItem("menu_video_config");
+        if (raw) {
+          const cfg = JSON.parse(raw);
+          const currentHash = await invoke("compute_file_hash", { path: cfg.destPath });
+          if (currentHash !== cfg.hash) {
+            await invoke("force_copy_file", { source: cfg.backupPath, dest: cfg.destPath });
+            addLog("info", "[Video] Menu video was reverted by game — restored custom video");
+          }
+        }
+      } catch {}
     };
     const timer = setInterval(check, HEALTH_CHECK_INTERVAL);
     return () => clearInterval(timer);
@@ -593,6 +610,7 @@ export default function App() {
   };
 
   return (
+    <MotionConfig reducedMotion={disableAnimations ? "always" : "never"}>
     <div
       className={`w-full h-full rounded-xl overflow-hidden border border-border flex flex-col shadow-2xl ${simplifiedTheme ? "bg-base-800" : ""}`}
       style={!simplifiedTheme ? {
@@ -753,6 +771,8 @@ export default function App() {
               onCloseWithGameChange={(v) => { setCloseWithGame(v); localStorage.setItem("close_with_game", String(v)); }}
               devMode={devMode}
               onDevModeChange={setDevMode}
+              disableAnimations={disableAnimations}
+              onDisableAnimationsChange={setDisableAnimations}
             />
             </motion.div>
           )}
@@ -843,5 +863,6 @@ export default function App() {
       )}
       </AnimatePresence>
     </div>
+    </MotionConfig>
   );
 }

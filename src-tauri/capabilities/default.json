@@ -21,29 +21,8 @@
     "dialog:default",
     "fs:default",
     "fs:allow-write-text-file",
-    {
-      "identifier": "fs:allow-exists",
-      "allow": [
-        {
-          "path": "C:\\Riot Games\\VALORANT\\**"
-        }
-      ]
-    },
-    {
-      "identifier": "fs:allow-copy-file",
-      "allow": [
-        {
-          "path": "C:\\Riot Games\\VALORANT\\**"
-        }
-      ]
-    },
-    {
-      "identifier": "fs:allow-remove",
-      "allow": [
-        {
-          "path": "C:\\Riot Games\\VALORANT\\**"
-        }
-      ]
-    }
+    "fs:allow-exists",
+    "fs:allow-copy-file",
+    "fs:allow-remove"
   ]
 }
