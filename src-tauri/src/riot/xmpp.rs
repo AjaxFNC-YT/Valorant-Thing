@@ -144,7 +144,9 @@ fn extract_valorant_b64(stanza: &str) -> Option<serde_json::Value> {
     serde_json::from_slice(&decoded).ok()
 }
 
-fn update_friends_from_xml(data: &str, own_puuid: &str, friends: &mut HashMap<String, FriendPresence>) {
+fn update_friends_from_xml(data: &str, own_puuid: &str, friends: &mut HashMap<String, FriendPresence>) -> Vec<(String, String)> {
+    let mut debug_logs: Vec<(String, String)> = Vec::new();
+    let mut parsed = 0u32;
     let mut search_from = 0;
     while let Some(pos) = data[search_from..].find("<presence") {
         let abs = search_from + pos;
@@ -158,6 +160,7 @@ fn update_friends_from_xml(data: &str, own_puuid: &str, friends: &mut HashMap<St
         if !puuid.is_empty() && puuid != own_puuid {
             let show = extract_show(stanza);
             let val_data = extract_valorant_b64(stanza);
+            let has_val = val_data.is_some();
             let entry = friends.entry(puuid.clone()).or_insert_with(|| FriendPresence {
                 puuid: puuid.clone(),
                 game_name: String::new(),
@@ -166,14 +169,20 @@ fn update_friends_from_xml(data: &str, own_puuid: &str, friends: &mut HashMap<St
                 valorant_data: None,
                 last_updated: 0,
             });
-            entry.show = show;
+            entry.show = show.clone();
             if val_data.is_some() {
                 entry.valorant_data = val_data;
             }
             entry.last_updated = now_ms();
+            parsed += 1;
+            debug_logs.push(("f_debug".to_string(), format!("{}.. show={} val_data={}", &puuid[..8.min(puuid.len())], show, has_val)));
         }
         search_from = abs + end;
     }
+    if parsed > 0 {
+        debug_logs.push(("f_debug".to_string(), format!("Parsed {} friend stanzas, total tracked: {}", parsed, friends.len())));
+    }
+    debug_logs
 }
 
 fn now_ms() -> u64 {
@@ -510,7 +519,8 @@ pub fn xmpp_connect(xmpp_state: &Mutex<XmppState>, riot_state: &Mutex<super::typ
             s.real_valorant_data = Some(real_data.0);
             s.real_keystone_ts = Some(real_data.1);
         }
-        update_friends_from_xml(&all_chunks, &puuid_clone, &mut s.friends);
+        let f_logs = update_friends_from_xml(&all_chunks, &puuid_clone, &mut s.friends);
+        for (dir, msg) in f_logs { add_log(&mut s.logs, &dir, &msg); }
         let friend_count = s.friends.len();
         add_log(&mut s.logs, "system", &format!("Captured {} friend presences", friend_count));
     }
@@ -564,7 +574,8 @@ pub fn xmpp_poll(state: &Mutex<XmppState>) -> Result<String, String> {
             } else {
                 add_log(&mut s.logs, "recv", &data);
             }
-            update_friends_from_xml(&data, &puuid, &mut s.friends);
+            let f_logs = update_friends_from_xml(&data, &puuid, &mut s.friends);
+            for (dir, msg) in f_logs { add_log(&mut s.logs, &dir, &msg); }
         }
         Ok(_) => {}
         Err(e) if e.contains("connection closed") => {

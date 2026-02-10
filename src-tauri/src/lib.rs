@@ -208,6 +208,22 @@ async fn kick_from_party(state: tauri::State<'_, SharedState>, target_puuid: Str
 }
 
 #[tauri::command]
+async fn invite_to_party(state: tauri::State<'_, SharedState>, name: String, tag: String) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::invite_to_party(&state, &name, &tag))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn request_to_join_party(state: tauri::State<'_, SharedState>, target_puuid: String) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::request_to_join_party(&state, &target_puuid))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
 async fn generate_party_code(state: tauri::State<'_, SharedState>) -> Result<String, String> {
     let state = Arc::clone(&state);
     tauri::async_runtime::spawn_blocking(move || riot::generate_party_code(&state))
@@ -219,6 +235,46 @@ async fn generate_party_code(state: tauri::State<'_, SharedState>) -> Result<Str
 async fn join_party_by_code(state: tauri::State<'_, SharedState>, code: String) -> Result<String, String> {
     let state = Arc::clone(&state);
     tauri::async_runtime::spawn_blocking(move || riot::join_party_by_code(&state, &code))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn change_queue(state: tauri::State<'_, SharedState>, queue_id: String) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::change_queue(&state, &queue_id))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn get_custom_configs(state: tauri::State<'_, SharedState>) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::get_custom_configs(&state))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn set_custom_settings(
+    state: tauri::State<'_, SharedState>,
+    map: String, mode: String, pod: String,
+    allow_cheats: bool, play_out_all_rounds: bool,
+    skip_match_history: bool, tournament_mode: bool,
+    overtime_win_by_two: bool,
+) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || {
+        riot::set_custom_settings(&state, &map, &mode, &pod, allow_cheats, play_out_all_rounds, skip_match_history, tournament_mode, overtime_win_by_two)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn start_custom_game_match(state: tauri::State<'_, SharedState>) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::start_custom_game_match(&state))
         .await
         .map_err(|e| format!("Task failed: {}", e))?
 }
@@ -588,11 +644,17 @@ pub fn run() {
             set_party_accessibility,
             disable_party_code,
             kick_from_party,
+            invite_to_party,
+            request_to_join_party,
             generate_party_code,
             join_party_by_code,
+            change_queue,
+            get_custom_configs,
+            set_custom_settings,
             start_discord_rpc,
             stop_discord_rpc,
             update_discord_rpc,
+            start_custom_game_match,
             enter_queue,
             leave_queue,
             xmpp_connect,

@@ -244,6 +244,14 @@ pub fn glz_post_body(region: &str, shard: &str, path: &str, body: &str, access_t
         return Err(format!("{}: {}", path, stderr.trim()));
     }
 
+    if let Some(code_str) = stderr.trim().strip_prefix("HTTP ") {
+        if let Ok(code) = code_str.trim().parse::<u16>() {
+            if code >= 400 {
+                return Err(format!("{}: HTTP {} - {}", path, code, &body_out[..body_out.len().min(300)]));
+            }
+        }
+    }
+
     Ok(body_out)
 }
 

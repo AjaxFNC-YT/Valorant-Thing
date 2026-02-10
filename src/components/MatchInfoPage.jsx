@@ -436,7 +436,7 @@ function MatchHeader({ mapId, maps, matchPhase, matchInfo, matchId, playerCount,
   const mapData = mapId ? (maps[mapId.toLowerCase()] || null) : null;
   const mapName = mapData?.displayName || "Unknown Map";
   const mapImg = mapData?.listViewIcon || mapData?.splash || "";
-  const isDeathmatch = matchInfo?.mode === "Deathmatch";
+  const canLeave = matchInfo?.mode === "Deathmatch" || matchInfo?.mode === "Custom";
   const [leaving, setLeaving] = useState(false);
 
   return (
@@ -475,7 +475,7 @@ function MatchHeader({ mapId, maps, matchPhase, matchInfo, matchId, playerCount,
 
         {/* Score display disabled — coregame endpoint doesn't provide round scores */}
 
-        {isDeathmatch && matchPhase === "INGAME" && matchId && (
+        {canLeave && matchPhase === "INGAME" && matchId && (
           <button
             disabled={leaving}
             onClick={async () => {
