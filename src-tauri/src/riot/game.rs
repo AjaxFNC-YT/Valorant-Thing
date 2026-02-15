@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
 use super::types::ConnectionState;
-use super::http::{glz_get, glz_post, glz_post_body, glz_delete, local_get, pd_get, pd_put, pd_batch_get};
+use super::http::{glz_get, glz_post, glz_post_body, glz_delete, local_get, local_post, pd_get, pd_put, pd_batch_get};
 use super::logging::log_info;
 
 fn get_local_creds(state: &Mutex<ConnectionState>) -> Result<(u16, String), String> {
@@ -162,7 +162,7 @@ pub fn get_party(state: &Mutex<ConnectionState>) -> Result<String, String> {
 
     let settings = &party_json["CustomGameData"]["Settings"];
     if party_state == "CUSTOM_GAME_SETUP" {
-        log_info(&format!("[Custom] Party Settings: {}", serde_json::to_string(settings).unwrap_or_default()));
+        log_info("[Custom] Parsed custom game settings");
     }
     let rules = &settings["GameRules"];
     let result = serde_json::json!({
@@ -407,12 +407,65 @@ pub fn invite_to_party(state: &Mutex<ConnectionState>, name: &str, tag: &str) ->
 }
 
 pub fn request_to_join_party(state: &Mutex<ConnectionState>, target_puuid: &str) -> Result<String, String> {
+    let (port, auth) = get_local_creds(state)?;
     let (access_token, entitlements, puuid, region, shard, client_version) = get_glz_creds(state)?;
-    let target_path = format!("/parties/v1/players/{}", target_puuid);
-    let target_raw = glz_get(&region, &shard, &target_path, &access_token, &entitlements, &client_version)?;
-    let target_json: serde_json::Value = serde_json::from_str(&target_raw).map_err(|e| format!("Parse: {}", e))?;
-    let target_party = target_json["CurrentPartyID"].as_str().filter(|s| !s.is_empty())
-        .ok_or("Player has no party")?;
+
+    let pres_raw = local_get(port, &auth, "/chat/v4/presences")?;
+    let pres_json: serde_json::Value = serde_json::from_str(&pres_raw).map_err(|e| format!("Parse presences: {}", e))?;
+    let presences = pres_json["presences"].as_array().ok_or("No presences array")?;
+
+    let my_party_path = format!("/parties/v1/players/{}", puuid);
+    let my_party_id = glz_get(&region, &shard, &my_party_path, &access_token, &entitlements, &client_version)
+        .ok()
+        .and_then(|r| serde_json::from_str::<serde_json::Value>(&r).ok())
+        .and_then(|j| j["CurrentPartyID"].as_str().map(|s| s.to_string()))
+        .unwrap_or_default();
+    log_info(&format!("[Party] My party ID: {}", my_party_id));
+    log_info(&format!("[Party] Looking for target PUUID {} in {} presences", target_puuid, presences.len()));
+
+    let mut target_party: Option<String> = None;
+    let mut all_matches: Vec<(String, String, u64)> = Vec::new();
+    for p in presences {
+        let pid = p["puuid"].as_str().unwrap_or_default();
+        if pid != target_puuid { continue; }
+        let product = p["product"].as_str().unwrap_or("?").to_string();
+        if let Some(priv_b64) = p["private"].as_str().filter(|s| !s.is_empty()) {
+            if let Ok(decoded) = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, priv_b64) {
+                if let Ok(priv_json) = serde_json::from_slice::<serde_json::Value>(&decoded) {
+                    let party_id = priv_json["partyId"].as_str().unwrap_or("").to_string();
+                    let party_size = priv_json["partySize"].as_u64().unwrap_or(0);
+                    log_info(&format!("[Party] Found presence: product={} partyId={} partySize={}", product, party_id, party_size));
+                    if !party_id.is_empty() {
+                        all_matches.push((product.clone(), party_id, party_size));
+                    }
+                }
+            }
+        }
+    }
+
+    for (product, party_id, _size) in &all_matches {
+        if product == "valorant" && !party_id.is_empty() && *party_id != my_party_id {
+            target_party = Some(party_id.clone());
+            break;
+        }
+    }
+    if target_party.is_none() {
+        for (product, party_id, _size) in &all_matches {
+            if !party_id.is_empty() && *party_id != my_party_id {
+                target_party = Some(party_id.clone());
+                break;
+            }
+        }
+    }
+
+    if target_party.is_none() && !all_matches.is_empty() {
+        let (_, ref pid, _) = all_matches[0];
+        if *pid == my_party_id {
+            return Err("Player is already in your party".to_string());
+        }
+    }
+
+    let target_party = target_party.ok_or("Player has no party (not found in presence data)")?;
     let path = format!("/parties/v1/parties/{}/request", target_party);
     let body = format!(r#"{{"Subjects":["{}"]}}"#, puuid);
     log_info(&format!("[Party] Requesting to join party {} (player {})", target_party, target_puuid));
@@ -422,7 +475,13 @@ pub fn request_to_join_party(state: &Mutex<ConnectionState>, target_puuid: &str)
 pub fn join_party_by_code(state: &Mutex<ConnectionState>, code: &str) -> Result<String, String> {
     let (access_token, entitlements, puuid, region, shard, client_version) = get_glz_creds(state)?;
     let path = format!("/parties/v1/players/{}/joinbycode/{}", puuid, code);
-    glz_post(&region, &shard, &path, &access_token, &entitlements, &client_version)
+    log_info(&format!("[Party] Joining by code '{}' -> {}", code, path));
+    let result = glz_post(&region, &shard, &path, &access_token, &entitlements, &client_version);
+    match &result {
+        Ok(r) => log_info(&format!("[Party] Join by code response: {}", &r[..r.len().min(200)])),
+        Err(e) => log_info(&format!("[Party] Join by code error: {}", e)),
+    }
+    result
 }
 
 pub fn get_custom_configs(state: &Mutex<ConnectionState>) -> Result<String, String> {
@@ -735,4 +794,165 @@ pub fn get_owned_agents(state: &Mutex<ConnectionState>) -> Result<Vec<String>, S
         .collect();
     log_info(&format!("[Game] Owned agents: {} total", ids.len()));
     Ok(ids)
+}
+
+pub fn get_chat_conversations(state: &Mutex<ConnectionState>) -> Result<String, String> {
+    let (port, auth) = get_local_creds(state)?;
+    let raw = local_get(port, &auth, "/chat/v6/conversations")?;
+    let all: serde_json::Value = serde_json::from_str(&raw).unwrap_or(serde_json::json!({}));
+    let convs = all["conversations"].as_array().cloned().unwrap_or_default();
+
+    let my_puuid = {
+        let guard = state.lock().map_err(|e| e.to_string())?;
+        guard.puuid.clone().unwrap_or_default()
+    };
+
+    let mut muc_labels: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
+    if let Ok((at, ent, puuid, region, shard, cv)) = get_glz_creds(state) {
+        if let Ok(pr) = glz_get(&region, &shard, &format!("/parties/v1/players/{}", puuid), &at, &ent, &cv) {
+            if let Ok(pj) = serde_json::from_str::<serde_json::Value>(&pr) {
+                if let Some(pid) = pj["CurrentPartyID"].as_str().filter(|s| !s.is_empty()) {
+                    if let Ok(party_raw) = glz_get(&region, &shard, &format!("/parties/v1/parties/{}", pid), &at, &ent, &cv) {
+                        if let Ok(party) = serde_json::from_str::<serde_json::Value>(&party_raw) {
+                            if let Some(muc) = party["MUCName"].as_str().filter(|s| !s.is_empty()) {
+                                muc_labels.insert(muc.to_string(), ("ares-parties".into(), "Party".into()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (player_path, match_prefix, phase) in &[
+            (format!("/pregame/v1/players/{}", puuid), "/pregame/v1/matches/", "pregame"),
+            (format!("/core-game/v1/players/{}", puuid), "/core-game/v1/matches/", "coregame"),
+        ] {
+            if let Ok(pr) = glz_get(&region, &shard, player_path, &at, &ent, &cv) {
+                if let Ok(pj) = serde_json::from_str::<serde_json::Value>(&pr) {
+                    if let Some(mid) = pj["MatchID"].as_str().filter(|s| !s.is_empty()) {
+                        if let Ok(mr) = glz_get(&region, &shard, &format!("{}{}", match_prefix, mid), &at, &ent, &cv) {
+                            if let Ok(mj) = serde_json::from_str::<serde_json::Value>(&mr) {
+                                let ares = format!("ares-{}", phase);
+                                if let Some(m) = mj["MUCName"].as_str().filter(|s| !s.is_empty()) {
+                                    muc_labels.insert(m.to_string(), (ares.clone(), "Team Chat".into()));
+                                }
+                                if let Some(m) = mj["AllMUCName"].as_str().filter(|s| !s.is_empty()) {
+                                    muc_labels.insert(m.to_string(), (ares.clone(), "All Chat".into()));
+                                }
+                                if let Some(m) = mj["TeamMUCName"].as_str().filter(|s| !s.is_empty()) {
+                                    muc_labels.insert(m.to_string(), (ares.clone(), "Team Chat".into()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut result = Vec::new();
+    let mut seen_mucs = std::collections::HashSet::new();
+
+    for c in &convs {
+        let cid = match c["cid"].as_str() {
+            Some(s) if !s.is_empty() => s,
+            _ => continue,
+        };
+        let mut conv = c.clone();
+        let cid_prefix = cid.split('@').next().unwrap_or("");
+        if let Some((muc_key, (chat_type, display))) = muc_labels.iter().find(|(muc, _)| {
+            let muc_prefix = muc.split('@').next().unwrap_or("");
+            cid == muc.as_str() || cid_prefix == muc_prefix
+        }) {
+            conv["chat_type"] = serde_json::json!(chat_type);
+            conv["display_name"] = serde_json::json!(display);
+            seen_mucs.insert(muc_key.clone());
+        } else {
+            let encoded = cid.replace("@", "%40");
+            if let Ok(pr) = local_get(port, &auth, &format!("/chat/v6/conversations/{}/participants", encoded)) {
+                if let Ok(pv) = serde_json::from_str::<serde_json::Value>(&pr) {
+                    let parts = pv["participants"].as_array().or_else(|| pv.as_array()).cloned().unwrap_or_default();
+                    let names: Vec<String> = parts.iter().filter_map(|p| {
+                        let pid = p["puuid"].as_str().unwrap_or("");
+                        if pid == my_puuid { return None; }
+                        let gn = p["game_name"].as_str().unwrap_or("");
+                        let gt = p["game_tag"].as_str().unwrap_or("");
+                        if !gn.is_empty() { Some(format!("{}#{}", gn, gt)) } else { None }
+                    }).collect();
+                    if !names.is_empty() {
+                        conv["display_name"] = serde_json::json!(names.join(", "));
+                    }
+                }
+            }
+        }
+        result.push(conv);
+    }
+
+    for (muc_cid, (chat_type, display)) in &muc_labels {
+        if !seen_mucs.contains(muc_cid) {
+            result.push(serde_json::json!({
+                "cid": muc_cid,
+                "chat_type": chat_type,
+                "display_name": display,
+                "type": "groupchat",
+                "direct_messages": false,
+            }));
+        }
+    }
+
+    log_info(&format!("[Chat] {} conversations returned ({} from list, {} game MUCs added)",
+        result.len(), convs.len(), result.len() - convs.len()));
+
+    Ok(serde_json::json!({ "conversations": result }).to_string())
+}
+
+pub fn get_chat_messages(state: &Mutex<ConnectionState>, cid: &str) -> Result<String, String> {
+    let (port, auth) = get_local_creds(state)?;
+    let encoded_cid = cid.replace("@", "%40");
+    let path = format!("/chat/v6/conversations/{}/messages", encoded_cid);
+    local_get(port, &auth, &path)
+}
+
+pub fn send_chat_message(state: &Mutex<ConnectionState>, cid: &str, message: &str, msg_type: &str) -> Result<String, String> {
+    let (port, auth) = get_local_creds(state)?;
+    let send_type = if msg_type.is_empty() { "chat" } else { msg_type };
+
+    let mut cids_to_try = vec![cid.to_string()];
+    if cid.contains("@ares-") {
+        let prefix = cid.split('@').next().unwrap_or(cid);
+        cids_to_try.push(format!("{}@br1.pvp.net", prefix));
+        if cid.contains("@ares-parties") {
+            cids_to_try.push("ares-parties".to_string());
+        } else if cid.contains("@ares-pregame") {
+            cids_to_try.push("ares-pregame".to_string());
+        } else if cid.contains("@ares-coregame") {
+            cids_to_try.push("ares-coregame".to_string());
+        }
+    }
+
+    for try_cid in &cids_to_try {
+        let body = serde_json::json!({
+            "cid": try_cid,
+            "message": message,
+            "type": send_type
+        }).to_string();
+        log_info(&format!("[Chat] Try sending {} to {}", send_type, try_cid));
+        if let Ok(raw) = local_post(port, &auth, "/chat/v6/messages", &body) {
+            let lines: Vec<&str> = raw.splitn(2, '\n').collect();
+            let status = lines.first().and_then(|s| s.parse::<u16>().ok()).unwrap_or(0);
+            let resp_body = lines.get(1).unwrap_or(&"").to_string();
+            if status < 400 {
+                log_info(&format!("[Chat] Send OK with cid={}", try_cid));
+                return Ok(resp_body);
+            }
+            log_info(&format!("[Chat] Failed ({}): {}", status, &resp_body[..resp_body.len().min(100)]));
+        }
+    }
+    Err(format!("Chat send failed: all CID formats tried for {}", cid))
+}
+
+pub fn get_chat_participants(state: &Mutex<ConnectionState>, cid: &str) -> Result<String, String> {
+    let (port, auth) = get_local_creds(state)?;
+    let encoded_cid = cid.replace("@", "%40");
+    let path = format!("/chat/v6/conversations/{}/participants", encoded_cid);
+    local_get(port, &auth, &path)
 }

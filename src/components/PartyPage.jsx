@@ -39,9 +39,6 @@ export default function PartyPage({ connected, addLog, onRefresh }) {
   const [error, setError] = useState(null);
   const [showJoin, setShowJoin] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
-  const [showRequestJoin, setShowRequestJoin] = useState(false);
-  const [requestingPuuid, setRequestingPuuid] = useState(null);
-  const [requestedPuuids, setRequestedPuuids] = useState(new Set());
   const [friends, setFriends] = useState([]);
   const [friendsLoading, setFriendsLoading] = useState(false);
   const [invitingPuuid, setInvitingPuuid] = useState(null);
@@ -131,7 +128,14 @@ export default function PartyPage({ connected, addLog, onRefresh }) {
 
   const handleJoin = async () => {
     if (!joinCode.trim()) return;
-    try { await invoke("join_party_by_code", { code: joinCode.trim() }); setShowJoin(false); setJoinCode(""); fetchParty(); } catch {}
+    try {
+      addLog?.("info", `[Party] Joining by code: ${joinCode.trim()}`);
+      await invoke("join_party_by_code", { code: joinCode.trim() });
+      addLog?.("info", "[Party] Join by code succeeded");
+      setShowJoin(false); setJoinCode(""); fetchParty();
+    } catch (e) {
+      addLog?.("error", `[Party] Join by code failed: ${e}`);
+    }
   };
 
   const fetchFriends = async () => {
@@ -160,12 +164,6 @@ export default function PartyPage({ connected, addLog, onRefresh }) {
     fetchFriends();
   };
 
-  const openRequestJoinModal = () => {
-    setShowRequestJoin(true);
-    setRequestedPuuids(new Set());
-    setFriendSearch("");
-    fetchFriends();
-  };
 
   const handleInvite = async (friend) => {
     setInvitingPuuid(friend.puuid);
@@ -179,17 +177,6 @@ export default function PartyPage({ connected, addLog, onRefresh }) {
     setInvitingPuuid(null);
   };
 
-  const handleRequestJoin = async (friend) => {
-    setRequestingPuuid(friend.puuid);
-    try {
-      await invoke("request_to_join_party", { targetPuuid: friend.puuid });
-      setRequestedPuuids(prev => new Set([...prev, friend.puuid]));
-      addLog?.("info", `[Party] Requested to join ${friend.game_name}#${friend.game_tag}`);
-    } catch (e) {
-      addLog?.("error", `[Party] Request to join failed: ${e}`);
-    }
-    setRequestingPuuid(null);
-  };
 
   const handleCopyCode = () => {
     if (!partyCode) return;
@@ -234,7 +221,7 @@ export default function PartyPage({ connected, addLog, onRefresh }) {
       overtimeWinByTwo: party.custom_overtime_win_by_two !== false,
       ...overrides,
     };
-    addLog?.("info", `[Custom] Sending: ${JSON.stringify(p)}`);
+    addLog?.("info", "[Custom] Sending settings", p);
     try {
       const resp = await invoke("set_custom_settings", p);
       addLog?.("info", `[Custom] OK`);
@@ -294,8 +281,17 @@ export default function PartyPage({ connected, addLog, onRefresh }) {
     return (
       <div className="flex-1 flex items-center justify-center p-5">
         <div className="text-center space-y-2">
-          <UsersIcon size={32} className="text-text-muted mx-auto" />
-          <p className="text-sm font-display text-text-muted">Connect to see your party</p>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-text-muted mx-auto">
+            <path d="M1 1l22 22" />
+            <path d="M16.72 11.06A10.94 10.94 0 0119 12.55" />
+            <path d="M5 12.55a10.94 10.94 0 015.17-2.39" />
+            <path d="M10.71 5.05A16 16 0 0122.56 9" />
+            <path d="M1.42 9a15.91 15.91 0 014.7-2.88" />
+            <path d="M8.53 16.11a6 6 0 016.95 0" />
+            <line x1="12" y1="20" x2="12.01" y2="20" />
+          </svg>
+          <p className="text-sm font-display text-text-muted">Waiting for Valorant</p>
+          <p className="text-[11px] font-body text-text-muted/60">Open Valorant and it will connect automatically</p>
         </div>
       </div>
     );
@@ -455,13 +451,6 @@ export default function PartyPage({ connected, addLog, onRefresh }) {
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>
           Invite
-        </button>
-        <button
-          onClick={openRequestJoinModal}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-base-600 border border-border text-xs font-body text-text-primary hover:bg-base-500 transition-colors"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3" /></svg>
-          Request Join
         </button>
         <button
           onClick={() => setShowJoin(true)}
@@ -789,70 +778,6 @@ export default function PartyPage({ connected, addLog, onRefresh }) {
       )}
       </AnimatePresence>
 
-      <AnimatePresence>
-      {showRequestJoin && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowRequestJoin(false)}>
-          <motion.div initial={{ opacity: 0, scale: 0.95, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 8 }} transition={{ duration: 0.15 }} className="bg-base-700 border border-border rounded-xl w-80 max-h-[420px] shadow-2xl flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="px-4 pt-3.5 pb-3 border-b border-border shrink-0">
-              <div className="flex items-center justify-between mb-2.5">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-xs font-display font-semibold text-text-primary">Request to Join</h3>
-                  {!friendsLoading && friends.length > 0 && (
-                    <span className="text-[10px] font-body text-text-muted">{friends.length}</span>
-                  )}
-                </div>
-                <button onClick={() => setShowRequestJoin(false)} className="w-5 h-5 rounded flex items-center justify-center text-text-muted hover:text-text-primary transition-colors">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12" /></svg>
-                </button>
-              </div>
-              <input
-                type="text"
-                value={friendSearch}
-                onChange={(e) => setFriendSearch(e.target.value)}
-                placeholder="Search..."
-                autoFocus
-                className="w-full px-2.5 py-1.5 bg-base-600 border border-border rounded-lg text-[11px] font-body text-text-primary placeholder:text-text-muted/40 outline-none focus:border-val-red/60 transition-colors"
-              />
-            </div>
-            <div className="flex-1 overflow-y-auto py-1 min-h-0">
-              {friendsLoading ? (
-                <div className="px-2 space-y-0.5">
-                  {[0, 1, 2, 3, 4, 5].map(i => (
-                    <div key={i} className="flex items-center gap-2.5 px-2 py-2 animate-pulse">
-                      <div className="w-6 h-6 rounded-full bg-base-500 shrink-0" />
-                      <div className="h-3 w-28 rounded bg-base-500" />
-                    </div>
-                  ))}
-                </div>
-              ) : friends.length === 0 ? (
-                <div className="flex items-center justify-center py-10 text-text-muted">
-                  <p className="text-[11px] font-body">No friends found</p>
-                </div>
-              ) : (
-                friends
-                  .filter(f => {
-                    if (!friendSearch.trim()) return true;
-                    const q = friendSearch.toLowerCase();
-                    return f.game_name?.toLowerCase().includes(q) || f.game_tag?.toLowerCase().includes(q);
-                  })
-                  .map((friend, i) => (
-                    <FriendInviteCard
-                      key={friend.puuid}
-                      friend={friend}
-                      onInvite={() => handleRequestJoin(friend)}
-                      inviting={requestingPuuid === friend.puuid}
-                      invited={requestedPuuids.has(friend.puuid)}
-                      index={i}
-                      actionLabel="Join"
-                      doneLabel="Sent"
-                    />
-                  ))
-              )}
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-      </AnimatePresence>
     </motion.div>
   );
 }

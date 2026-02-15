@@ -7,8 +7,10 @@ const noAnim = () => localStorage.getItem("disable_animations") === "true";
 const T0 = { duration: 0 };
 const COMP_TIERS_URL = "https://valorant-api.com/v1/competitivetiers";
 const MAPS_URL = "https://valorant-api.com/v1/maps";
-const POLL_INTERVAL = 5000;
+const POLL_INTERVAL = 2000;
 const CACHE_TTL = 10 * 60 * 1000;
+const HENRIK_RATE_WAIT = 3000;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const playerCache = new Map();
 
@@ -26,7 +28,7 @@ function setCache(puuid, key, value) {
   playerCache.set(puuid, entry);
 }
 
-export default function MatchInfoPage({ henrikApiKey, player: selfPlayer, connected }) {
+export default function MatchInfoPage({ henrikApiKey, splooshimaApiKey, splooshimaAvailable, player: selfPlayer, connected, addLog }) {
   const myPuuid = selfPlayer?.puuid;
   const [players, setPlayers] = useState([]);
   const [agents, setAgents] = useState({});
@@ -172,56 +174,92 @@ export default function MatchInfoPage({ henrikApiKey, player: selfPlayer, connec
       if (needsAccount.length > 0) setFetching(true);
 
       if (needsAccount.length > 0) {
-        try {
-          const raw = await invoke("resolve_player_names", { puuids: needsAccount.map((p) => p.puuid) });
-          if (cancelledRef.current) return;
-          const names = JSON.parse(raw);
-          const nameMap = {};
-          names.forEach((n) => { nameMap[n.puuid] = n; });
+        const puuidsToResolve = needsAccount.map((p) => p.puuid);
+        const resolved = {};
+        let unresolvedPuuids = [...puuidsToResolve];
 
-          const isHidden = (n) => !n || !n.name || n.name === "" || /^[a-f0-9]{6,}$/i.test(n.name);
-
-          const hiddenPuuids = needsAccount
-            .filter((p) => isHidden(nameMap[p.puuid]) || p.incognito || p.hideLevel)
-            .map((p) => p.puuid);
-
-          needsAccount.forEach((p) => {
-            const n = nameMap[p.puuid];
-            if (n && !hiddenPuuids.includes(p.puuid)) setCache(p.puuid, "account", n);
-          });
-
-          setPlayers((prev) => prev.map((p) => {
-            const n = nameMap[p.puuid];
-            if (hiddenPuuids.includes(p.puuid)) return { ...p, _loading: !!henrikApiKey };
-            return n ? { ...p, account: n, _loading: false } : { ...p, _loading: false };
-          }));
-
-          if (hiddenPuuids.length > 0 && henrikApiKey) {
-            const henrikResults = await Promise.all(hiddenPuuids.map((puuid) =>
-              invoke("henrik_get_account", { puuid, apiKey: henrikApiKey })
-                .then((r) => {
-                  const j = JSON.parse(r);
-                  if (j.status === 429 || !j.data) return { puuid, data: null };
-                  return { puuid, data: { name: j.data.name, tag: j.data.tag, account_level: j.data.account_level } };
-                })
-                .catch(() => ({ puuid, data: null }))
-            ));
+        if (splooshimaApiKey && splooshimaAvailable) {
+          try {
+            const sRaw = await invoke("splooshima_lookup", { puuids: unresolvedPuuids, apiKey: splooshimaApiKey });
             if (cancelledRef.current) return;
-
-            henrikResults.forEach((r) => { if (r.data) setCache(r.puuid, "account", r.data); });
-            setPlayers((prev) => prev.map((p) => {
-              const r = henrikResults.find((a) => a.puuid === p.puuid);
-              return r?.data ? { ...p, account: r.data, _loading: false } : { ...p, _loading: false };
-            }));
-          } else if (hiddenPuuids.length > 0) {
-            setPlayers((prev) => prev.map((p) =>
-              hiddenPuuids.includes(p.puuid) ? { ...p, _loading: false } : p
-            ));
+            const sData = JSON.parse(sRaw);
+            addLog?.("info", `[Splooshima] Bulk lookup — ${sData.found ?? 0}/${sData.requested ?? 0} resolved`, sData);
+            (sData?.results || []).forEach((r) => {
+              resolved[r.puuid] = { name: r.gameName, tag: r.tagLine };
+              setCache(r.puuid, "account", { name: r.gameName, tag: r.tagLine });
+            });
+            unresolvedPuuids = unresolvedPuuids.filter((id) => !resolved[id]);
+          } catch (e) {
+            addLog?.("error", `[Splooshima] Lookup failed — falling back`, { error: String(e) });
           }
-        } catch (e) {
-          setError(`Name resolve failed: ${e}`);
-          setPlayers((prev) => prev.map((p) => ({ ...p, _loading: false })));
         }
+
+        const henrikAccountFetch = async (puuid) => {
+          try {
+            const r = await invoke("henrik_get_account", { puuid, apiKey: henrikApiKey });
+            const j = JSON.parse(r);
+            if (j.status === 429) {
+              addLog?.("info", `[Henrik] Account rate-limited for ${puuid.slice(0, 8)}… — retrying`, j);
+              await sleep(HENRIK_RATE_WAIT);
+              const retry = await invoke("henrik_get_account", { puuid, apiKey: henrikApiKey });
+              const rj = JSON.parse(retry);
+              addLog?.("info", `[Henrik] Account retry for ${puuid.slice(0, 8)}…`, rj);
+              return rj.data ? { puuid, name: rj.data.name, tag: rj.data.tag, account_level: rj.data.account_level } : null;
+            }
+            addLog?.("info", `[Henrik] Account resolved for ${puuid.slice(0, 8)}…`, j);
+            return j.data ? { puuid, name: j.data.name, tag: j.data.tag, account_level: j.data.account_level } : null;
+          } catch (e) {
+            addLog?.("error", `[Henrik] Account lookup failed for ${puuid.slice(0, 8)}…`, { error: String(e) });
+            return null;
+          }
+        };
+
+        if (unresolvedPuuids.length > 0 && henrikApiKey) {
+          const results = await Promise.all(unresolvedPuuids.map(henrikAccountFetch));
+          if (cancelledRef.current) return;
+          results.forEach((r) => {
+            if (r) {
+              resolved[r.puuid] = { name: r.name, tag: r.tag, account_level: r.account_level };
+              setCache(r.puuid, "account", resolved[r.puuid]);
+            }
+          });
+          unresolvedPuuids = unresolvedPuuids.filter((id) => !resolved[id]);
+        }
+
+        if (henrikApiKey) {
+          const needLevel = needsAccount.filter((p) =>
+            resolved[p.puuid] && !resolved[p.puuid].account_level && (p.hideLevel || p.accountLevel === 0)
+          );
+          if (needLevel.length > 0) {
+            const results = await Promise.all(needLevel.map((p) => henrikAccountFetch(p.puuid)));
+            if (cancelledRef.current) return;
+            results.forEach((r) => {
+              if (r?.account_level) {
+                resolved[r.puuid] = { ...resolved[r.puuid], account_level: r.account_level };
+                setCache(r.puuid, "account", resolved[r.puuid]);
+              }
+            });
+          }
+        }
+
+        if (unresolvedPuuids.length > 0) {
+          try {
+            const raw = await invoke("resolve_player_names", { puuids: unresolvedPuuids });
+            if (cancelledRef.current) return;
+            const names = JSON.parse(raw);
+            names.forEach((n) => {
+              if (n.name) {
+                resolved[n.puuid] = n;
+                setCache(n.puuid, "account", n);
+              }
+            });
+          } catch {}
+        }
+
+        setPlayers((prev) => prev.map((p) => {
+          const r = resolved[p.puuid];
+          return r ? { ...p, account: { ...p.account, ...r }, _loading: false } : { ...p, _loading: false };
+        }));
         setFetching(false);
       }
 
@@ -231,42 +269,62 @@ export default function MatchInfoPage({ henrikApiKey, player: selfPlayer, connec
         invoke("get_player_mmr", { targetPuuid: puuid })
           .then((raw) => {
             const json = JSON.parse(raw);
-            return {
-              puuid,
-              data: {
-                currenttier: json.currenttier || 0,
-                ranking_in_tier: json.ranking_in_tier || 0,
-              },
-              limited: false,
-            };
+            const tier = json.currenttier || 0;
+            const rr = json.ranking_in_tier || 0;
+            if (tier === 0 && rr === 0) return { puuid, data: null, needsHenrik: true };
+            return { puuid, data: { currenttier: tier, ranking_in_tier: rr } };
           })
-          .catch(() => ({ puuid, data: UNRANKED, limited: false }));
+          .catch(() => ({ puuid, data: null, needsHenrik: true }));
 
       if (needsMmr.length === 0) return;
 
       let mmrResults = await Promise.all(needsMmr.map((p) => fetchMmr(p.puuid)));
       if (cancelledRef.current) return;
 
-      const mmrLimited = mmrResults.filter((r) => r.limited).map((r) => r.puuid);
-      mmrResults.filter((r) => !r.limited && r.data).forEach((r) => setCache(r.puuid, "mmr", r.data));
-
+      mmrResults.filter((r) => r.data).forEach((r) => setCache(r.puuid, "mmr", r.data));
       setPlayers((prev) => prev.map((p) => {
         const r = mmrResults.find((a) => a.puuid === p.puuid);
-        return r && !r.limited ? { ...p, mmr: r.data } : p;
+        return r?.data ? { ...p, mmr: r.data } : p;
       }));
 
-      if (mmrLimited.length > 0) {
-        await sleep(RATE_LIMIT_WAIT);
+      const mmrFailed = mmrResults.filter((r) => r.needsHenrik).map((r) => r.puuid);
+      if (mmrFailed.length > 0 && henrikApiKey) {
+        const henrikMmrFetch = async (puuid) => {
+          try {
+            const r = await invoke("henrik_get_mmr", { puuid, region: "na", apiKey: henrikApiKey });
+            const j = JSON.parse(r);
+            if (j.status === 429) {
+              addLog?.("info", `[Henrik] MMR rate-limited for ${puuid.slice(0, 8)}… — retrying`, j);
+              await sleep(HENRIK_RATE_WAIT);
+              const retry = await invoke("henrik_get_mmr", { puuid, region: "na", apiKey: henrikApiKey });
+              const rj = JSON.parse(retry);
+              addLog?.("info", `[Henrik] MMR retry for ${puuid.slice(0, 8)}…`, rj);
+              const tier = rj.data?.current_data?.currenttier ?? rj.data?.currenttier ?? 0;
+              const rr = rj.data?.current_data?.ranking_in_tier ?? rj.data?.ranking_in_tier ?? 0;
+              return tier > 0 ? { puuid, currenttier: tier, ranking_in_tier: rr } : null;
+            }
+            addLog?.("info", `[Henrik] MMR resolved for ${puuid.slice(0, 8)}…`, j);
+            if (j.data) {
+              const tier = j.data?.current_data?.currenttier ?? j.data?.currenttier ?? 0;
+              const rr = j.data?.current_data?.ranking_in_tier ?? j.data?.ranking_in_tier ?? 0;
+              return tier > 0 ? { puuid, currenttier: tier, ranking_in_tier: rr } : null;
+            }
+            return null;
+          } catch (e) {
+            addLog?.("error", `[Henrik] MMR lookup failed for ${puuid.slice(0, 8)}…`, { error: String(e) });
+            return null;
+          }
+        };
+        const hResults = await Promise.all(mmrFailed.map(henrikMmrFetch));
         if (cancelledRef.current) return;
-
-        const retryMmr = await Promise.all(mmrLimited.map((puuid) => fetchMmr(puuid)));
-        if (cancelledRef.current) return;
-
-        retryMmr.filter((r) => r.data).forEach((r) => setCache(r.puuid, "mmr", r.data));
-        setPlayers((prev) => prev.map((p) => {
-          const r = retryMmr.find((a) => a.puuid === p.puuid);
-          return r ? { ...p, mmr: r.data } : p;
-        }));
+        const mmrMap = {};
+        hResults.forEach((r) => {
+          if (r) {
+            mmrMap[r.puuid] = { currenttier: r.currenttier, ranking_in_tier: r.ranking_in_tier };
+            setCache(r.puuid, "mmr", mmrMap[r.puuid]);
+          }
+        });
+        setPlayers((prev) => prev.map((p) => mmrMap[p.puuid] ? { ...p, mmr: mmrMap[p.puuid] } : p));
       }
     } catch (err) {
       const msg = typeof err === "string" ? err : err?.message || "";
@@ -295,12 +353,17 @@ export default function MatchInfoPage({ henrikApiKey, player: selfPlayer, connec
   if (!connected) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-2">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted/40">
-          <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
-          <circle cx="9" cy="7" r="4" />
-          <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-text-muted">
+          <path d="M1 1l22 22" />
+          <path d="M16.72 11.06A10.94 10.94 0 0119 12.55" />
+          <path d="M5 12.55a10.94 10.94 0 015.17-2.39" />
+          <path d="M10.71 5.05A16 16 0 0122.56 9" />
+          <path d="M1.42 9a15.91 15.91 0 014.7-2.88" />
+          <path d="M8.53 16.11a6 6 0 016.95 0" />
+          <line x1="12" y1="20" x2="12.01" y2="20" />
         </svg>
-        <p className="text-text-muted text-sm font-body">Waiting for Valorant to connect</p>
+        <p className="text-text-muted text-sm font-display">Waiting for Valorant</p>
+        <p className="text-[11px] font-body text-text-muted/60">Open Valorant and it will connect automatically</p>
       </div>
     );
   }
@@ -543,8 +606,14 @@ function PlayerCard({ player, agents, tiers, isSelf }) {
               <p className={`text-sm font-display font-bold truncate ${isSelf ? "text-val-red" : "text-text-primary"}`}>
                 {displayName}
               </p>
-              {acct?.tag && !player.incognito && (
+              {acct?.tag && (
                 <span className="text-xs font-body text-text-muted">#{acct.tag}</span>
+              )}
+              {(player.incognito || player.hideLevel) && (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted/50 shrink-0" title="Hidden identity">
+                  <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" />
+                  <line x1="1" y1="1" x2="23" y2="23" />
+                </svg>
               )}
               {isSelf && (
                 <span className="text-[9px] font-display font-bold text-val-red/70 uppercase tracking-wider ml-0.5">you</span>

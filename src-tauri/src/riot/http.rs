@@ -47,6 +47,27 @@ pub fn local_put(port: u16, auth: &str, path: &str, body: &str) -> Result<String
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+pub fn local_post(port: u16, auth: &str, path: &str, body: &str) -> Result<String, String> {
+    let escaped_body = body.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n");
+    let script = format!(
+        r#"const https=require('https');const d='{body}';const r=https.request('https://127.0.0.1:{port}{path}',{{method:'POST',headers:{{Authorization:'{auth}','Content-Type':'application/json','Content-Length':Buffer.byteLength(d)}},agent:new https.Agent({{rejectUnauthorized:false}})}},res=>{{let b='';res.on('data',c=>b+=c);res.on('end',()=>process.stdout.write(res.statusCode+'\n'+b))}});r.on('error',e=>{{process.stderr.write(e.message);process.exit(1)}});r.setTimeout(5000,()=>{{r.destroy();process.stderr.write('timeout');process.exit(1)}});r.write(d);r.end()"#,
+        port = port, path = path, auth = auth, body = escaped_body
+    );
+
+    let mut cmd = Command::new("node");
+    cmd.args(["-e", &script]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+    let output = cmd.output().map_err(|e| format!("node failed: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("POST {}: {}", path, stderr.trim()));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
 pub fn https_get(url: &str) -> Result<String, String> {
     let script = format!(
         r#"const https=require('https');https.get('{}',res=>{{let d='';res.on('data',c=>d+=c);res.on('end',()=>process.stdout.write(d))}}).on('error',e=>{{process.stderr.write(e.message);process.exit(1)}})"#,
@@ -102,6 +123,36 @@ pub fn authed_get_with_entitlements(url: &str, access_token: &str, entitlements:
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+pub fn splooshima_api_post(path: &str, body: &str, api_key: &str) -> Result<String, String> {
+    let url = format!("https://api.splooshima.com{}", path);
+    let escaped_body = body.replace('\\', "\\\\").replace('\'', "\\'");
+    let script = format!(
+        r#"const https=require('https');const u=new URL('{}');const b='{}';const r=https.request({{hostname:u.hostname,path:u.pathname,method:'POST',headers:{{'X-API-Key':'{}','Content-Type':'application/json','Content-Length':Buffer.byteLength(b)}}}},res=>{{let d='';res.on('data',c=>d+=c);res.on('end',()=>process.stdout.write(res.statusCode+'\n'+d))}});r.on('error',e=>{{process.stderr.write(e.message);process.exit(1)}});r.setTimeout(15000,()=>{{r.destroy();process.stderr.write('timeout');process.exit(1)}});r.write(b);r.end()"#,
+        url, escaped_body, api_key
+    );
+
+    let mut cmd = Command::new("node");
+    cmd.args(["-e", &script]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+    let output = cmd.output().map_err(|e| format!("node failed: {}", e))?;
+
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+
+    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let lines: Vec<&str> = raw.splitn(2, '\n').collect();
+    let status = lines.first().and_then(|s| s.parse::<u16>().ok()).unwrap_or(0);
+    let resp_body = lines.get(1).unwrap_or(&"").to_string();
+
+    if status >= 400 {
+        return Err(format!("Splooshima API {} (HTTP {})", resp_body.chars().take(200).collect::<String>(), status));
+    }
+
+    Ok(resp_body)
 }
 
 pub fn henrik_api_get(path: &str, api_key: &str) -> Result<String, String> {

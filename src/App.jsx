@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { motion, AnimatePresence, MotionConfig } from "framer-motion";
+import appIcon from "../src-tauri/icons/icon.png";
+import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import InstalockPage from "./components/InstalockPage";
@@ -13,6 +15,7 @@ import MatchInfoPage from "./components/MatchInfoPage";
 import PartyPage from "./components/PartyPage";
 import MiscPage from "./components/MiscPage";
 import FakeStatusPage from "./components/FakeStatusPage";
+import ChatPage from "./components/ChatPage";
 import HomePage from "./components/HomePage";
 
 const CUSTOM_VARS = ['--base-900','--base-800','--base-700','--base-600','--base-500','--base-400','--border','--border-light','--val-red','--val-red-dark','--accent-blue','--accent-blue-dark'];
@@ -72,9 +75,34 @@ function formatTimeLeft(ageSecs) {
   return `${s}s`;
 }
 
+function renderMarkdownInline(text) {
+  const parts = [];
+  let remaining = text;
+  let key = 0;
+  while (remaining.length > 0) {
+    const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
+    const linkMatch = remaining.match(/\[([^\]]+)\]\(([^)]+)\)/);
+    const codeMatch = remaining.match(new RegExp("`([^`]+)`"));
+    const urlMatch = remaining.match(/https?:\/\/[^\s)]+/);
+    let earliest = null;
+    let type = null;
+    for (const [t, m] of [["bold", boldMatch], ["link", linkMatch], ["code", codeMatch], ["url", urlMatch]]) {
+      if (m && (earliest === null || m.index < earliest.index)) { earliest = m; type = t; }
+    }
+    if (!earliest) { parts.push(remaining); break; }
+    if (earliest.index > 0) parts.push(remaining.slice(0, earliest.index));
+    if (type === "bold") parts.push(<strong key={key++} className="text-text-secondary font-semibold">{earliest[1]}</strong>);
+    else if (type === "link") { const url = earliest[2]; parts.push(<span key={key++} onClick={() => shellOpen(url)} className="text-accent-blue hover:underline cursor-pointer break-all">{earliest[1]}</span>); }
+    else if (type === "url") { const url = earliest[0]; parts.push(<span key={key++} onClick={() => shellOpen(url)} className="text-accent-blue hover:underline cursor-pointer break-all">{url}</span>); }
+    else if (type === "code") parts.push(<code key={key++} className="px-1 py-0.5 rounded bg-base-600 text-[10px] font-mono text-text-secondary">{earliest[1]}</code>);
+    remaining = remaining.slice(earliest.index + earliest[0].length);
+  }
+  return parts;
+}
+
 const RECONNECT_INTERVAL = 3000;
 const HEALTH_CHECK_INTERVAL = 10000;
-const MATCH_POLL_INTERVAL = 3000;
+const MATCH_POLL_INTERVAL = 1500;
 
 export default function App() {
   const [status, setStatus] = useState("waiting");
@@ -100,11 +128,20 @@ export default function App() {
   const [disableAnimations, setDisableAnimations] = useState(() => localStorage.getItem("disable_animations") === "true");
   const [nodeInstalled, setNodeInstalled] = useState(true);
   const [updateInfo, setUpdateInfo] = useState(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [showOlderReleases, setShowOlderReleases] = useState(false);
   const [fakeStatusUnsaved, setFakeStatusUnsaved] = useState(false);
   const [logs, setLogs] = useState([]);
-  const [instalockActive, setInstalockActive] = useState(false);
+  const [instalockActive, setInstalockActive] = useState(() => {
+    try {
+      const cfg = JSON.parse(localStorage.getItem("instalock-config"));
+      return cfg?.active || false;
+    } catch { return false; }
+  });
   const [henrikApiKey, setHenrikApiKey] = useState(() => localStorage.getItem("henrik_api_key") || "");
+  const [splooshimaApiKey, setSplooshimaApiKey] = useState(() => localStorage.getItem("splooshima_api_key") || "");
+  const [splooshimaAvailable, setSplooshimaAvailable] = useState(true);
   const [mapDodgeActive, setMapDodgeActive] = useState(() => {
     try {
       const cfg = JSON.parse(localStorage.getItem("mapdodge-config"));
@@ -146,6 +183,22 @@ export default function App() {
   const pendingRequeueRef = useRef(false);
 
   useEffect(() => {
+    const cfg = (() => { try { return JSON.parse(localStorage.getItem("instalock-config")); } catch { return null; } })();
+    if (!cfg) return;
+    const EXCLUDED = ["The Range", "District", "Kasbah", "Drift", "Glitch", "Piazza", "Basic Training", "Skirmish A", "Skirmish B", "Skirmish C"];
+    fetch("https://valorant-api.com/v1/maps").then(r => r.json()).then(res => {
+      const maps = (res.data || []).filter(m => !EXCLUDED.includes(m.displayName));
+      const perMap = {};
+      if (cfg.perMap) {
+        for (const [mapId, saved] of Object.entries(cfg.perMap)) {
+          if (saved) perMap[mapId] = saved;
+        }
+      }
+      instalockConfigRef.current = { maps, selectedAgent: cfg.defaultAgent || null, perMapSelections: perMap };
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
     if (startMinimized) {
       const win = getCurrentWindow();
       win.hide();
@@ -163,7 +216,11 @@ export default function App() {
     invoke("check_for_update").then((raw) => {
       try {
         const data = JSON.parse(raw);
-        if (data.update && data.download_url) setUpdateInfo(data);
+        if (data.update && data.download_url) {
+          setUpdateInfo(data);
+          const skipped = localStorage.getItem("skipped_update_version");
+          if (skipped !== data.latest) setShowUpdateModal(true);
+        }
       } catch {}
     }).catch(() => {});
   }, []);
@@ -349,6 +406,17 @@ export default function App() {
       }
       if (info.loadout_debug) {
         try { addLog("info", "PD Player Loadout (playerloadout)", JSON.parse(info.loadout_debug)); } catch { addLog("info", "PD Player Loadout", info.loadout_debug); }
+      }
+      const sKey = localStorage.getItem("splooshima_api_key") || "";
+      if (sKey && info.puuid) {
+        try {
+          await invoke("splooshima_lookup", { puuids: [info.puuid], apiKey: sKey });
+          setSplooshimaAvailable(true);
+          addLog("info", "[Splooshima] Health check passed — available this session");
+        } catch (sErr) {
+          setSplooshimaAvailable(false);
+          addLog("error", `[Splooshima] Health check failed — using Henrik fallback this session: ${sErr}`);
+        }
       }
     } catch (err) {
       const errMsg = typeof err === "string" ? err : err?.message || String(err);
@@ -654,41 +722,110 @@ export default function App() {
         </div>
       )}
       <AnimatePresence>
-      {updateInfo && (
-        <motion.div key="update-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="fixed inset-0 z-[150] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }} transition={{ duration: 0.2, ease: "easeOut" }} className="max-w-md w-full p-6 rounded-xl bg-base-700 border border-border shadow-2xl text-center space-y-4">
-            <div className="w-14 h-14 mx-auto rounded-full bg-accent-blue/15 border border-accent-blue/30 flex items-center justify-center">
+      {updateInfo && showUpdateModal && (
+        <motion.div key="update-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 backdrop-blur-md">
+          <motion.div initial={{ opacity: 0, scale: 0.92, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.92, y: 16 }} transition={{ duration: 0.25, ease: "easeOut" }} className="max-w-lg w-full rounded-2xl bg-base-800 border border-border shadow-2xl overflow-hidden">
+            <div className="px-6 pt-6 pb-4 border-b border-border bg-gradient-to-b from-base-700 to-base-800">
+              <div className="flex items-center gap-3 mb-4">
+                <img src={appIcon} alt="Valorant Thing" className="w-10 h-10 rounded-xl" />
+                <div>
+                  <h2 className="text-sm font-display font-bold text-text-primary leading-tight">Valorant Thing</h2>
+                  <p className="text-[10px] font-body text-text-muted">A new version is available</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-md bg-base-600 border border-border text-[11px] font-mono text-text-muted">v{updateInfo.current}</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-muted/50"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+                <span className="px-2 py-0.5 rounded-md bg-accent-blue/15 border border-accent-blue/25 text-[11px] font-mono text-accent-blue font-semibold">v{updateInfo.latest}</span>
+              </div>
+            </div>
+            {!updating && (updateInfo.release_notes || updateInfo.all_releases?.length > 1) && (
+              <div className="px-6 py-4 border-b border-border">
+                <div className="max-h-64 overflow-y-auto pr-1 custom-scrollbar space-y-3">
+                  {updateInfo.release_notes && (
+                    <div>
+                      <h3 className="text-[11px] font-display font-semibold text-text-secondary mb-2 uppercase tracking-wider">
+                        Release Notes — v{updateInfo.latest}
+                      </h3>
+                      <div className="text-xs font-body text-text-muted leading-relaxed whitespace-pre-wrap break-words space-y-1.5">
+                        {updateInfo.release_notes.split('\n').map((line, i) => {
+                          if (line.startsWith('### ')) return <p key={i} className="text-text-secondary font-semibold text-[11px] pt-1.5">{renderMarkdownInline(line.slice(4))}</p>;
+                          if (line.startsWith('## ')) return <p key={i} className="text-text-primary font-bold text-xs pt-2">{renderMarkdownInline(line.slice(3))}</p>;
+                          if (line.startsWith('- ')) return <p key={i} className="pl-2 flex gap-1.5"><span className="text-accent-blue shrink-0">•</span><span>{renderMarkdownInline(line.slice(2))}</span></p>;
+                          if (line.trim() === '') return null;
+                          return <p key={i}>{renderMarkdownInline(line)}</p>;
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {updateInfo.all_releases?.length > 1 && (
+                    <div>
+                      <button
+                        onClick={() => setShowOlderReleases(!showOlderReleases)}
+                        className="flex items-center gap-1.5 text-[11px] font-display font-semibold text-text-muted hover:text-text-secondary transition-colors"
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={`transition-transform duration-150 ${showOlderReleases ? "rotate-90" : ""}`}><path d="M9 18l6-6-6-6" /></svg>
+                        Previous Releases ({updateInfo.all_releases.length - 1})
+                      </button>
+                      {showOlderReleases && (
+                        <div className="mt-3 space-y-4 pl-2 border-l border-border/50">
+                          {updateInfo.all_releases.slice(1).map((rel, ri) => (
+                            <div key={ri}>
+                              <h4 className="text-[11px] font-display font-semibold text-text-secondary mb-1.5">v{rel.version}</h4>
+                              {rel.notes && (
+                                <div className="text-xs font-body text-text-muted leading-relaxed whitespace-pre-wrap break-words space-y-1">
+                                  {rel.notes.split('\n').map((line, i) => {
+                                    if (line.startsWith('### ')) return <p key={i} className="text-text-secondary font-semibold text-[11px] pt-1">{renderMarkdownInline(line.slice(4))}</p>;
+                                    if (line.startsWith('## ')) return <p key={i} className="text-text-primary font-bold text-xs pt-1.5">{renderMarkdownInline(line.slice(3))}</p>;
+                                    if (line.startsWith('- ')) return <p key={i} className="pl-2 flex gap-1.5"><span className="text-accent-blue shrink-0">•</span><span>{renderMarkdownInline(line.slice(2))}</span></p>;
+                                    if (line.trim() === '') return null;
+                                    return <p key={i}>{renderMarkdownInline(line)}</p>;
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            <div className="px-6 py-4 flex items-center justify-between">
               {updating ? (
-                <div className="w-7 h-7 border-2 border-accent-blue/30 border-t-accent-blue rounded-full animate-spin" />
+                <div className="flex items-center gap-3 w-full">
+                  <div className="w-5 h-5 border-2 border-accent-blue/30 border-t-accent-blue rounded-full animate-spin shrink-0" />
+                  <div>
+                    <p className="text-xs font-display font-semibold text-text-primary">Downloading update...</p>
+                    <p className="text-[10px] font-body text-text-muted">The installer will launch automatically</p>
+                  </div>
+                </div>
               ) : (
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-accent-blue">
-                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
-                </svg>
+                <>
+                  <button
+                    onClick={() => { localStorage.setItem("skipped_update_version", updateInfo.latest); setShowUpdateModal(false); }}
+                    className="px-4 py-2 rounded-lg text-[11px] font-display font-medium text-text-muted hover:text-text-secondary hover:bg-base-700 transition-colors"
+                  >
+                    Skip
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setUpdating(true);
+                      try {
+                        await invoke("download_and_install_update", { url: updateInfo.download_url, filename: updateInfo.asset_name });
+                      } catch (e) {
+                        setUpdating(false);
+                      }
+                    }}
+                    className="px-5 py-2 rounded-lg bg-accent-blue text-white text-[11px] font-display font-semibold hover:brightness-110 transition-all flex items-center gap-2"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+                    Update Now
+                  </button>
+                </>
               )}
             </div>
-            <h2 className="text-base font-display font-bold text-text-primary">
-              {updating ? "Updating..." : "Update Available"}
-            </h2>
-            <p className="text-xs font-body text-text-muted leading-relaxed">
-              {updating
-                ? "Downloading update, the installer will launch automatically..."
-                : `v${updateInfo.current} → v${updateInfo.latest}`}
-            </p>
-            {!updating && (
-              <button
-                onClick={async () => {
-                  setUpdating(true);
-                  try {
-                    await invoke("download_and_install_update", { url: updateInfo.download_url, filename: updateInfo.asset_name });
-                  } catch (e) {
-                    setUpdating(false);
-                  }
-                }}
-                className="px-5 py-2.5 rounded-lg bg-accent-blue text-white text-xs font-display font-semibold hover:brightness-110 transition-all"
-              >
-                Update Now
-              </button>
-            )}
           </motion.div>
         </motion.div>
       )}
@@ -723,7 +860,7 @@ export default function App() {
           )}
           {activeTab === "matchinfo" && (
             <motion.div key="matchinfo" className="flex-1 flex min-h-0" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15, ease: "easeOut" }}>
-            <MatchInfoPage henrikApiKey={henrikApiKey} player={player} connected={status === "connected"} />
+            <MatchInfoPage henrikApiKey={henrikApiKey} splooshimaApiKey={splooshimaApiKey} splooshimaAvailable={splooshimaAvailable} player={player} connected={status === "connected"} addLog={addLog} />
             </motion.div>
           )}
           {activeTab === "mapdodge" && (
@@ -746,6 +883,8 @@ export default function App() {
               onLockDelayChange={setLockDelay}
               henrikApiKey={henrikApiKey}
               onHenrikApiKeyChange={setHenrikApiKey}
+              splooshimaApiKey={splooshimaApiKey}
+              onSplooshimaApiKeyChange={(v) => { setSplooshimaApiKey(v); localStorage.setItem("splooshima_api_key", v); }}
               theme={theme}
               onThemeChange={setTheme}
               startWithWindows={startWithWindows}
@@ -773,12 +912,19 @@ export default function App() {
               onDevModeChange={setDevMode}
               disableAnimations={disableAnimations}
               onDisableAnimationsChange={setDisableAnimations}
+              updateInfo={updateInfo}
+              onShowUpdate={() => setShowUpdateModal(true)}
             />
             </motion.div>
           )}
           {activeTab === "party" && (
             <motion.div key="party" className="flex-1 flex min-h-0" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15, ease: "easeOut" }}>
             <PartyPage connected={status === "connected"} addLog={addLog} onRefresh={confirmRefresh} />
+            </motion.div>
+          )}
+          {activeTab === "chat" && (
+            <motion.div key="chat" className="flex-1 flex min-h-0" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15, ease: "easeOut" }}>
+            <ChatPage connected={status === "connected"} addLog={addLog} />
             </motion.div>
           )}
           {activeTab === "fakestatus" && (

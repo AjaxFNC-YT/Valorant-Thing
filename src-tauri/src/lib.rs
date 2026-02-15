@@ -272,6 +272,39 @@ async fn set_custom_settings(
 }
 
 #[tauri::command]
+async fn get_chat_conversations(state: tauri::State<'_, SharedState>) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::get_chat_conversations(&state))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn get_chat_messages(state: tauri::State<'_, SharedState>, cid: String) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::get_chat_messages(&state, &cid))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn send_chat_message(state: tauri::State<'_, SharedState>, cid: String, message: String, msg_type: Option<String>) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    let t = msg_type.unwrap_or_default();
+    tauri::async_runtime::spawn_blocking(move || riot::send_chat_message(&state, &cid, &message, &t))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn get_chat_participants(state: tauri::State<'_, SharedState>, cid: String) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::get_chat_participants(&state, &cid))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
 async fn start_custom_game_match(state: tauri::State<'_, SharedState>) -> Result<String, String> {
     let state = Arc::clone(&state);
     tauri::async_runtime::spawn_blocking(move || riot::start_custom_game_match(&state))
@@ -405,7 +438,7 @@ const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[tauri::command]
 async fn check_for_update() -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(|| {
-        let script = r#"const https=require('https');const o={hostname:'api.github.com',path:'/repos/AjaxFNC-YT/Valorant-Thing/releases/latest',headers:{'User-Agent':'ValorantThing'}};https.get(o,res=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>process.stdout.write(d))}).on('error',e=>{process.stderr.write(e.message);process.exit(1)})"#;
+        let script = r#"const https=require('https');const o={hostname:'api.github.com',path:'/repos/AjaxFNC-YT/Valorant-Thing/releases?per_page=20',headers:{'User-Agent':'ValorantThing'}};https.get(o,res=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>process.stdout.write(d))}).on('error',e=>{process.stderr.write(e.message);process.exit(1)})"#;
         let mut cmd = std::process::Command::new("node");
         cmd.args(["-e", script]);
         #[cfg(target_os = "windows")]
@@ -418,21 +451,29 @@ async fn check_for_update() -> Result<String, String> {
             return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
         }
         let body = String::from_utf8_lossy(&output.stdout).to_string();
-        let json: serde_json::Value = serde_json::from_str(&body).map_err(|e| format!("parse: {}", e))?;
-        let tag = json["tag_name"].as_str().unwrap_or("").trim_start_matches('v');
+        let releases: Vec<serde_json::Value> = serde_json::from_str(&body).map_err(|e| format!("parse: {}", e))?;
         let current = CURRENT_VERSION;
-        if tag.is_empty() || tag == current {
-            return Ok(serde_json::json!({"update": false, "current": current}).to_string());
-        }
-        let tag_parts: Vec<u32> = tag.split('.').filter_map(|s| s.parse().ok()).collect();
         let cur_parts: Vec<u32> = current.split('.').filter_map(|s| s.parse().ok()).collect();
-        let is_newer = tag_parts > cur_parts;
-        if !is_newer {
+
+        let mut newer: Vec<&serde_json::Value> = releases.iter().filter(|r| {
+            let t = r["tag_name"].as_str().unwrap_or("").trim_start_matches('v');
+            let parts: Vec<u32> = t.split('.').filter_map(|s| s.parse().ok()).collect();
+            parts > cur_parts
+        }).collect();
+        if newer.is_empty() {
             return Ok(serde_json::json!({"update": false, "current": current}).to_string());
         }
+        newer.sort_by(|a, b| {
+            let av: Vec<u32> = a["tag_name"].as_str().unwrap_or("").trim_start_matches('v').split('.').filter_map(|s| s.parse().ok()).collect();
+            let bv: Vec<u32> = b["tag_name"].as_str().unwrap_or("").trim_start_matches('v').split('.').filter_map(|s| s.parse().ok()).collect();
+            bv.cmp(&av)
+        });
+
+        let latest = &newer[0];
+        let tag = latest["tag_name"].as_str().unwrap_or("").trim_start_matches('v');
         let mut download_url = String::new();
         let mut asset_name = String::new();
-        if let Some(assets) = json["assets"].as_array() {
+        if let Some(assets) = latest["assets"].as_array() {
             for a in assets {
                 let name = a["name"].as_str().unwrap_or("");
                 if name.ends_with(".exe") && name.contains("setup") {
@@ -442,13 +483,23 @@ async fn check_for_update() -> Result<String, String> {
                 }
             }
         }
+        let all_releases: Vec<serde_json::Value> = newer.iter().map(|r| {
+            serde_json::json!({
+                "version": r["tag_name"].as_str().unwrap_or("").trim_start_matches('v'),
+                "notes": r["body"].as_str().unwrap_or(""),
+                "published_at": r["published_at"].as_str().unwrap_or(""),
+            })
+        }).collect();
         Ok(serde_json::json!({
             "update": true,
             "current": current,
             "latest": tag,
             "download_url": download_url,
             "asset_name": asset_name,
-            "release_url": json["html_url"].as_str().unwrap_or(""),
+            "release_url": latest["html_url"].as_str().unwrap_or(""),
+            "release_notes": latest["body"].as_str().unwrap_or(""),
+            "published_at": latest["published_at"].as_str().unwrap_or(""),
+            "all_releases": all_releases,
         }).to_string())
     })
     .await
@@ -537,6 +588,16 @@ async fn henrik_get_mmr(puuid: String, region: String, api_key: String) -> Resul
     tauri::async_runtime::spawn_blocking(move || {
         let path = format!("/valorant/v2/by-puuid/mmr/{}/{}", region, puuid);
         riot::henrik_api_get(&path, &api_key)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn splooshima_lookup(puuids: Vec<String>, api_key: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let body = serde_json::json!(puuids).to_string();
+        riot::splooshima_api_post("/v1/lookup", &body, &api_key)
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?
@@ -639,6 +700,7 @@ pub fn run() {
             resolve_player_names,
             henrik_get_account,
             henrik_get_mmr,
+            splooshima_lookup,
             get_party,
             get_friends,
             set_party_accessibility,
@@ -655,6 +717,10 @@ pub fn run() {
             stop_discord_rpc,
             update_discord_rpc,
             start_custom_game_match,
+            get_chat_conversations,
+            get_chat_messages,
+            send_chat_message,
+            get_chat_participants,
             enter_queue,
             leave_queue,
             xmpp_connect,

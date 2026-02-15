@@ -1,3 +1,10 @@
+@font-face {
+  font-family: "Valorant";
+  src: url("./assets/ValorantFont.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

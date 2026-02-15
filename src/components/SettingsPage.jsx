@@ -149,7 +149,7 @@ function buildPreviewGradient(ct) {
 const CONFIG_KEYS = [
   "show_logs", "app_theme", "simplified_theme", "custom_theme",
   "discord_rpc", "start_with_windows", "start_minimized", "minimize_to_tray",
-  "henrik_api_key", "mapdodge-config", "auto_unqueue", "auto_requeue",
+  "henrik_api_key", "splooshima_api_key", "mapdodge-config", "auto_unqueue", "auto_requeue",
   "instalock_select_delay", "instalock_lock_delay", "instalock-config",
   "fake-status-config",
 ];
@@ -159,6 +159,7 @@ export default function SettingsPage({
   selectDelay, onSelectDelayChange,
   lockDelay, onLockDelayChange,
   henrikApiKey, onHenrikApiKeyChange,
+  splooshimaApiKey, onSplooshimaApiKeyChange,
   theme, onThemeChange,
   startWithWindows, onStartWithWindowsChange,
   startMinimized, onStartMinimizedChange,
@@ -169,6 +170,7 @@ export default function SettingsPage({
   closeWithGame, onCloseWithGameChange,
   devMode, onDevModeChange,
   disableAnimations, onDisableAnimationsChange,
+  updateInfo, onShowUpdate,
 }) {
   const fileRef = useRef(null);
   const configFileRef = useRef(null);
@@ -267,6 +269,54 @@ export default function SettingsPage({
 
   return (
     <motion.div initial="hidden" animate="show" variants={{ hidden: {}, show: { transition: { staggerChildren: noAnim() ? 0 : 0.04 } } }} className="flex-1 flex flex-col min-h-0 p-5 gap-3 overflow-y-auto">
+      {updateInfo && (
+        <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-accent-blue/5 border border-accent-blue/20 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-accent-blue/15 border border-accent-blue/25 flex items-center justify-center shrink-0">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-accent-blue"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-display font-semibold text-text-primary">Update Available</p>
+              <p className="text-[10px] font-body text-text-muted truncate">v{updateInfo.current} → v{updateInfo.latest}</p>
+            </div>
+          </div>
+          <button
+            onClick={onShowUpdate}
+            className="px-3 py-1.5 rounded-lg bg-accent-blue text-white text-[11px] font-display font-semibold hover:brightness-110 transition-all shrink-0"
+          >
+            View Update
+          </button>
+        </motion.div>
+      )}
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
+        <div className="flex items-center gap-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted">
+            <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
+            <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
+          </svg>
+          <h2 className="text-sm font-display font-semibold text-text-primary">Splooshima API Key</h2>
+        </div>
+        <p className="text-xs font-body text-text-muted">
+          Bypassing hidden names, tags, and account levels.
+        </p>
+        <input
+          type="password"
+          value={splooshimaApiKey}
+          onChange={(e) => onSplooshimaApiKeyChange(e.target.value)}
+          placeholder="Your Splooshima API key"
+          className="w-full px-3 py-2 bg-base-600 border border-border rounded-lg text-xs font-body text-text-primary placeholder:text-text-muted/50 outline-none focus:border-val-red/60 transition-colors"
+        />
+        <button
+          onClick={() => open("https://splooshima.com")}
+          className="inline-flex items-center gap-1 text-xs font-body text-val-red hover:text-val-red/80 transition-colors"
+        >
+          Get API key
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" />
+          </svg>
+        </button>
+      </motion.div>
+
       <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
         <div className="flex items-center gap-2">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted">
@@ -276,7 +326,7 @@ export default function SettingsPage({
           <h2 className="text-sm font-display font-semibold text-text-primary">Henrik API Key</h2>
         </div>
         <p className="text-xs font-body text-text-muted">
-          Get a free API key to bypass anonymous mode and see real player names/levels.
+          Resolving MMR and ranked info for players.
         </p>
         <input
           type="password"
@@ -555,7 +605,7 @@ export default function SettingsPage({
 
       <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-1">
         <h2 className="text-sm font-display font-semibold text-text-primary">About</h2>
-        <p className="text-xs font-body text-text-secondary">Valorant Thing v1.3.0</p>
+        <p className="text-xs font-body text-text-secondary">Valorant Thing v1.5.0</p>
         <p className="text-xs font-body text-text-muted">
           Created by AjaxFNC · Built with Rust & Tauri · Uses official Valorant APIs
         </p>

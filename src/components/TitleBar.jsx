@@ -19,14 +19,26 @@ export default function TitleBar({ simplifiedTheme = true, minimizeToTray = fals
       className={`h-11 flex items-center justify-between px-4 border-b border-border shrink-0 rounded-t-xl ${simplifiedTheme ? "bg-base-800" : ""}`}
     >
       <div className="flex items-center gap-2.5" data-tauri-drag-region>
-        <div className="w-5 h-5 flex items-center justify-center">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <path
-              d="M12 2L2 19h20L12 2z"
-              fill="rgb(var(--val-red))"
-              opacity="0.9"
-            />
-          </svg>
+        <div
+          className="w-6 h-6 rounded-[6px] flex items-center justify-center shrink-0"
+          style={{
+            background: "linear-gradient(135deg, rgb(var(--val-red)) 0%, color-mix(in srgb, rgb(var(--val-red)) 45%, black) 64%, color-mix(in srgb, rgb(var(--val-red)) 5%, black) 100%)",
+            boxShadow: "0 2px 6px rgba(0,0,0,0.5), 0 0 0 0.5px rgba(255,255,255,0.08) inset",
+          }}
+        >
+          <span
+            style={{
+              fontFamily: '"Valorant", sans-serif',
+              fontSize: "12.5px",
+              lineHeight: 1,
+              paddingTop: "3px",
+              color: "#fff",
+              textShadow: "0 1px 3px rgba(0,0,0,0.6), 0 0 6px rgba(0,0,0,0.3)",
+              letterSpacing: "0.5px",
+            }}
+          >
+            VT
+          </span>
         </div>
         <span
           className="font-display font-semibold text-sm tracking-widest uppercase text-text-primary"
