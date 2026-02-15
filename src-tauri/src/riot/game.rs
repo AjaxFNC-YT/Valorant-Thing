@@ -708,7 +708,7 @@ pub fn get_match_page(state: &Mutex<ConnectionState>, page: u64, page_size: u64)
 
     let start = page * page_size;
     let end = start + page_size;
-    let history_path = format!("/match-history/v1/history/{}?startIndex={}&endIndex={}&queue=competitive", puuid, start, end);
+    let history_path = format!("/match-history/v1/history/{}?startIndex={}&endIndex={}", puuid, start, end);
     let history_raw = pd_get(&shard, &history_path, &access_token, &entitlements, &client_version)?;
     let history: serde_json::Value = serde_json::from_str(&history_raw).map_err(|e| format!("parse history: {}", e))?;
     let total = history["Total"].as_u64().unwrap_or(0);
@@ -762,6 +762,8 @@ pub fn get_match_page(state: &Mutex<ConnectionState>, page: u64, page_size: u64)
                 }
             }
 
+            let queue_id = detail["matchInfo"]["queueID"].as_str().unwrap_or("").to_string();
+
             matches.push(serde_json::json!({
                 "map": map_name,
                 "won": won,
@@ -771,6 +773,7 @@ pub fn get_match_page(state: &Mutex<ConnectionState>, page: u64, page_size: u64)
                 "deaths": deaths,
                 "assists": assists,
                 "agent": agent,
+                "queueId": queue_id,
             }));
         }
     }

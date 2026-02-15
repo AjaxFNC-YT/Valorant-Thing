@@ -605,7 +605,7 @@ export default function SettingsPage({
 
       <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-1">
         <h2 className="text-sm font-display font-semibold text-text-primary">About</h2>
-        <p className="text-xs font-body text-text-secondary">Valorant Thing v1.5.0</p>
+        <p className="text-xs font-body text-text-secondary">Valorant Thing v1.5.1</p>
         <p className="text-xs font-body text-text-muted">
           Created by AjaxFNC · Built with Rust & Tauri · Uses official Valorant APIs
         </p>

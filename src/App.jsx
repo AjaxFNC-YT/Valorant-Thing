@@ -17,6 +17,7 @@ import MiscPage from "./components/MiscPage";
 import FakeStatusPage from "./components/FakeStatusPage";
 import ChatPage from "./components/ChatPage";
 import HomePage from "./components/HomePage";
+import { getCached, setCache } from "./matchCache";
 
 const CUSTOM_VARS = ['--base-900','--base-800','--base-700','--base-600','--base-500','--base-400','--border','--border-light','--val-red','--val-red-dark','--accent-blue','--accent-blue-dark'];
 
@@ -181,6 +182,10 @@ export default function App() {
   const autoRequeueRef = useRef(autoRequeue);
   const pendingUnqueueRef = useRef(false);
   const pendingRequeueRef = useRef(false);
+  const prefetchedMatchRef = useRef(null);
+  const splooshimaApiKeyRef = useRef(splooshimaApiKey);
+  const splooshimaAvailableRef = useRef(splooshimaAvailable);
+  const henrikApiKeyRef = useRef(henrikApiKey);
 
   useEffect(() => {
     const cfg = (() => { try { return JSON.parse(localStorage.getItem("instalock-config")); } catch { return null; } })();
@@ -663,6 +668,125 @@ export default function App() {
     poll();
     return () => { cancelled = true; };
   }, [instalockActive, mapDodgeActive, status, addLog]);
+
+  useEffect(() => { splooshimaApiKeyRef.current = splooshimaApiKey; }, [splooshimaApiKey]);
+  useEffect(() => { splooshimaAvailableRef.current = splooshimaAvailable; }, [splooshimaAvailable]);
+  useEffect(() => { henrikApiKeyRef.current = henrikApiKey; }, [henrikApiKey]);
+
+  useEffect(() => {
+    if (status !== "connected") return;
+    let cancelled = false;
+    const PREFETCH_INTERVAL = 3000;
+    const HENRIK_WAIT = 3000;
+
+    const prefetch = async () => {
+      if (cancelled) return;
+      try {
+        const raw = await invoke("check_current_game");
+        const match = JSON.parse(raw);
+        const matchId = match.ID || match.MatchID;
+        const phase = match._phase === "pregame" ? "PREGAME" : "INGAME";
+        const key = `${matchId}_${phase}`;
+        if (prefetchedMatchRef.current === key) return;
+
+        const rawPlayers = phase === "PREGAME"
+          ? (match.AllyTeam?.Players || [])
+          : (match.Players || []);
+
+        const puuids = rawPlayers
+          .map((p) => p.Subject)
+          .filter((id) => id && !getCached(id, "account"));
+
+        if (puuids.length === 0) {
+          prefetchedMatchRef.current = key;
+          return;
+        }
+
+        addLog("info", `[Prefetch] Match ${matchId.slice(0, 8)}… found — resolving ${puuids.length} players`);
+        const resolved = {};
+
+        const sKey = splooshimaApiKeyRef.current;
+        const sAvail = splooshimaAvailableRef.current;
+        if (sKey && sAvail) {
+          try {
+            const sRaw = await invoke("splooshima_lookup", { puuids, apiKey: sKey });
+            if (cancelled) return;
+            const sData = JSON.parse(sRaw);
+            (sData?.results || []).forEach((r) => {
+              const entry = { name: r.gameName, tag: r.tagLine, account_level: r.level != null ? r.level : null };
+              resolved[r.puuid] = entry;
+              setCache(r.puuid, "account", entry);
+              if (r.currentTier != null) {
+                setCache(r.puuid, "mmr", {
+                  currenttier: r.currentTier || 0,
+                  ranking_in_tier: r.currentRR || 0,
+                  peaktier: r.peakTier || 0,
+                  peak_rr: r.peakRR || 0,
+                });
+              }
+            });
+            addLog("info", `[Prefetch] Splooshima resolved ${sData.found ?? 0}/${sData.requested ?? 0}`);
+          } catch (e) {
+            addLog("error", `[Prefetch] Splooshima failed: ${e}`);
+          }
+        }
+
+        const hKey = henrikApiKeyRef.current;
+        if (hKey) {
+          const needLevel = puuids.filter((id) => resolved[id] && resolved[id].account_level == null);
+          for (const puuid of needLevel) {
+            if (cancelled) return;
+            try {
+              const r = await invoke("henrik_get_account", { puuid, apiKey: hKey });
+              const j = JSON.parse(r);
+              if (j.status === 429) {
+                await new Promise((r) => setTimeout(r, HENRIK_WAIT));
+                const retry = await invoke("henrik_get_account", { puuid, apiKey: hKey });
+                const rj = JSON.parse(retry);
+                if (rj.data?.account_level) {
+                  resolved[puuid] = { ...resolved[puuid], account_level: rj.data.account_level };
+                  setCache(puuid, "account", resolved[puuid]);
+                }
+              } else if (j.data?.account_level) {
+                resolved[puuid] = { ...resolved[puuid], account_level: j.data.account_level };
+                setCache(puuid, "account", resolved[puuid]);
+              }
+            } catch {}
+          }
+
+          const unresolved = puuids.filter((id) => !resolved[id]);
+          for (const puuid of unresolved) {
+            if (cancelled) return;
+            try {
+              const r = await invoke("henrik_get_account", { puuid, apiKey: hKey });
+              const j = JSON.parse(r);
+              if (j.status === 429) {
+                await new Promise((r) => setTimeout(r, HENRIK_WAIT));
+                const retry = await invoke("henrik_get_account", { puuid, apiKey: hKey });
+                const rj = JSON.parse(retry);
+                if (rj.data) {
+                  const entry = { name: rj.data.name, tag: rj.data.tag, account_level: rj.data.account_level || null };
+                  resolved[puuid] = entry;
+                  setCache(puuid, "account", entry);
+                }
+              } else if (j.data) {
+                const entry = { name: j.data.name, tag: j.data.tag, account_level: j.data.account_level || null };
+                resolved[puuid] = entry;
+                setCache(puuid, "account", entry);
+              }
+            } catch {}
+          }
+        }
+
+        prefetchedMatchRef.current = key;
+        addLog("info", `[Prefetch] Done — ${Object.keys(resolved).length} accounts cached`);
+      } catch {}
+    };
+
+    prefetch();
+    const timer = setInterval(prefetch, PREFETCH_INTERVAL);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [status, addLog]);
 
   const handleDodge = async () => {
     if (!pregameMatchId) return;

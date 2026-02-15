@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
+import { getCached, setCache } from "../matchCache";
 
 const AGENT_MAP_URL = "https://valorant-api.com/v1/agents?isPlayableCharacter=true";
 const noAnim = () => localStorage.getItem("disable_animations") === "true";
@@ -8,25 +9,8 @@ const T0 = { duration: 0 };
 const COMP_TIERS_URL = "https://valorant-api.com/v1/competitivetiers";
 const MAPS_URL = "https://valorant-api.com/v1/maps";
 const POLL_INTERVAL = 2000;
-const CACHE_TTL = 10 * 60 * 1000;
 const HENRIK_RATE_WAIT = 3000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-const playerCache = new Map();
-
-function getCached(puuid, key) {
-  const entry = playerCache.get(puuid);
-  if (!entry) return undefined;
-  if (Date.now() - entry.ts > CACHE_TTL) { playerCache.delete(puuid); return undefined; }
-  return entry[key];
-}
-
-function setCache(puuid, key, value) {
-  const entry = playerCache.get(puuid) || { ts: Date.now() };
-  entry[key] = value;
-  entry.ts = Date.now();
-  playerCache.set(puuid, entry);
-}
 
 export default function MatchInfoPage({ henrikApiKey, splooshimaApiKey, splooshimaAvailable, player: selfPlayer, connected, addLog }) {
   const myPuuid = selfPlayer?.puuid;
@@ -166,9 +150,6 @@ export default function MatchInfoPage({ henrikApiKey, splooshimaApiKey, splooshi
       setLoading(false);
 
       const needsAccount = withCached.filter((p) => !p.account);
-      const needsMmr = withCached.filter((p) => !p.mmr);
-
-      if (needsAccount.length === 0 && needsMmr.length === 0) return;
 
       setError(null);
       if (needsAccount.length > 0) setFetching(true);
@@ -185,8 +166,18 @@ export default function MatchInfoPage({ henrikApiKey, splooshimaApiKey, splooshi
             const sData = JSON.parse(sRaw);
             addLog?.("info", `[Splooshima] Bulk lookup — ${sData.found ?? 0}/${sData.requested ?? 0} resolved`, sData);
             (sData?.results || []).forEach((r) => {
-              resolved[r.puuid] = { name: r.gameName, tag: r.tagLine };
-              setCache(r.puuid, "account", { name: r.gameName, tag: r.tagLine });
+              const entry = { name: r.gameName, tag: r.tagLine, account_level: r.level != null ? r.level : null };
+              resolved[r.puuid] = entry;
+              setCache(r.puuid, "account", entry);
+              if (r.currentTier != null) {
+                const mmrEntry = {
+                  currenttier: r.currentTier || 0,
+                  ranking_in_tier: r.currentRR || 0,
+                  peaktier: r.peakTier || 0,
+                  peak_rr: r.peakRR || 0,
+                };
+                setCache(r.puuid, "mmr", mmrEntry);
+              }
             });
             unresolvedPuuids = unresolvedPuuids.filter((id) => !resolved[id]);
           } catch (e) {
@@ -228,9 +219,10 @@ export default function MatchInfoPage({ henrikApiKey, splooshimaApiKey, splooshi
 
         if (henrikApiKey) {
           const needLevel = needsAccount.filter((p) =>
-            resolved[p.puuid] && !resolved[p.puuid].account_level && (p.hideLevel || p.accountLevel === 0)
+            resolved[p.puuid] && resolved[p.puuid].account_level == null && (p.hideLevel || p.accountLevel === 0)
           );
           if (needLevel.length > 0) {
+            addLog?.("info", `[Henrik] Fetching levels for ${needLevel.length} players with null Splooshima level`);
             const results = await Promise.all(needLevel.map((p) => henrikAccountFetch(p.puuid)));
             if (cancelledRef.current) return;
             results.forEach((r) => {
@@ -258,12 +250,14 @@ export default function MatchInfoPage({ henrikApiKey, splooshimaApiKey, splooshi
 
         setPlayers((prev) => prev.map((p) => {
           const r = resolved[p.puuid];
-          return r ? { ...p, account: { ...p.account, ...r }, _loading: false } : { ...p, _loading: false };
+          const cachedMmr = getCached(p.puuid, "mmr") || null;
+          return r ? { ...p, account: { ...p.account, ...r }, mmr: cachedMmr || p.mmr, _loading: false } : { ...p, mmr: cachedMmr || p.mmr, _loading: false };
         }));
         setFetching(false);
       }
 
-      const UNRANKED = { currenttier: 0, ranking_in_tier: 0 };
+      const needsMmr = withCached.filter((p) => !getCached(p.puuid, "mmr"));
+      if (needsMmr.length === 0) return;
 
       const fetchMmr = (puuid) =>
         invoke("get_player_mmr", { targetPuuid: puuid })
@@ -275,8 +269,6 @@ export default function MatchInfoPage({ henrikApiKey, splooshimaApiKey, splooshi
             return { puuid, data: { currenttier: tier, ranking_in_tier: rr } };
           })
           .catch(() => ({ puuid, data: null, needsHenrik: true }));
-
-      if (needsMmr.length === 0) return;
 
       let mmrResults = await Promise.all(needsMmr.map((p) => fetchMmr(p.puuid)));
       if (cancelledRef.current) return;
@@ -576,6 +568,7 @@ function PlayerCard({ player, agents, tiers, isSelf }) {
   const acct = player.account;
   const mmr = player.mmr;
   const tierInfo = tiers[mmr?.currenttier] || null;
+  const peakTierInfo = tiers[mmr?.peaktier] || null;
   const isLoading = player._loading;
   const displayName = acct?.name || agent?.displayName || player.puuid.slice(0, 8);
   const displayLevel = acct?.account_level || player.accountLevel || 0;
@@ -619,7 +612,7 @@ function PlayerCard({ player, agents, tiers, isSelf }) {
                 <span className="text-[9px] font-display font-bold text-val-red/70 uppercase tracking-wider ml-0.5">you</span>
               )}
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-[11px] font-body text-text-primary">
                 {displayLevel > 0 ? `Level ${displayLevel}` : "Level ?"}
               </span>
@@ -631,8 +624,16 @@ function PlayerCard({ player, agents, tiers, isSelf }) {
               <span className="text-[11px] font-display font-semibold text-text-primary">
                 {tierInfo?.name || "Unranked"}
               </span>
-              <span className="text-[11px] text-text-primary/50">·</span>
               <span className="text-[11px] font-body text-text-primary/70">{mmr?.ranking_in_tier ?? 0}RR</span>
+              {peakTierInfo && mmr?.peaktier > 0 && (
+                <>
+                  <span className="text-[11px] text-text-primary/50">·</span>
+                  <span className="text-[11px] font-body text-text-primary">Peak:</span>
+                  <img src={peakTierInfo.icon} alt="" className="w-3.5 h-3.5" />
+                  <span className="text-[11px] font-display font-semibold text-text-primary">{peakTierInfo.name}</span>
+                  <span className="text-[11px] font-body text-text-primary/70">{mmr?.peak_rr ?? 0}RR</span>
+                </>
+              )}
             </div>
           </>
         )}

@@ -283,12 +283,42 @@ export default function HomePage({ connected, player, refreshKey, onRefresh }) {
             const mapData = maps[m.map];
             const mapName = mapData?.name || m.map;
             const mapImg = mapData?.listIcon || mapData?.splash;
-            const draw = m.roundsWon === m.roundsLost;
-            const resultText = draw ? "DRAW" : m.won ? "VICTORY" : "DEFEAT";
-            const resultColor = draw ? "text-text-muted" : m.won ? "text-green-400" : "text-red-400";
-            const borderColor = draw ? "border-text-muted/20" : m.won ? "border-green-500/20" : "border-red-500/20";
             const agentIcon = m.agent ? `https://media.valorant-api.com/agents/${m.agent}/displayicon.png` : null;
-            const kda = m.deaths > 0 ? ((m.kills + m.assists) / m.deaths).toFixed(1) : "Perfect";
+            const kdaVal = m.deaths > 0 ? ((m.kills + m.assists) / m.deaths).toFixed(1) : null;
+            const kdaText = kdaVal ? `${kdaVal} KDA` : "Perfect KDA";
+
+            const q = m.queueId || "";
+            const MODE_NAMES = { competitive: "Competitive", unrated: "Unrated", deathmatch: "Deathmatch", spikerush: "Spike Rush", swiftplay: "Swiftplay", ggteam: "Escalation", premier: "Premier", newmap: "New Map", snowball: "Snowball" };
+            const modeName = MODE_NAMES[q] || (q ? q.charAt(0).toUpperCase() + q.slice(1) : "Custom");
+            const isDeathmatch = q === "deathmatch";
+
+            let resultText, resultColor, borderColor;
+            if (isDeathmatch) {
+              const dmWon = m.kills >= 40;
+              resultText = dmWon ? "VICTORY" : "DEFEAT";
+              resultColor = dmWon ? "text-green-400" : "text-red-400";
+              borderColor = dmWon ? "border-green-500/20" : "border-red-500/20";
+            } else {
+              const draw = m.roundsWon === m.roundsLost && m.roundsWon === 0;
+              const realDraw = !draw && m.roundsWon === m.roundsLost;
+              if (draw) {
+                resultText = "REMAKE";
+                resultColor = "text-text-muted";
+                borderColor = "border-text-muted/20";
+              } else if (realDraw) {
+                resultText = "DRAW";
+                resultColor = "text-text-muted";
+                borderColor = "border-text-muted/20";
+              } else if (m.won) {
+                resultText = "VICTORY";
+                resultColor = "text-green-400";
+                borderColor = "border-green-500/20";
+              } else {
+                resultText = "DEFEAT";
+                resultColor = "text-red-400";
+                borderColor = "border-red-500/20";
+              }
+            }
 
             return (
               <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={noAnim() ? T0 : { duration: 0.2, delay }} className={`relative rounded-lg overflow-hidden border ${borderColor} h-14 group`}>
@@ -304,21 +334,24 @@ export default function HomePage({ connected, player, refreshKey, onRefresh }) {
 
                   <div className="w-16 shrink-0">
                     <p className={`text-[10px] font-display font-bold uppercase tracking-wide ${resultColor}`}>{resultText}</p>
-                    <p className="text-xs font-mono text-text-muted">{m.roundsWon}-{m.roundsLost}</p>
+                    <p className="text-xs font-mono text-text-muted">{isDeathmatch ? `${m.kills} kills` : `${m.roundsWon}-${m.roundsLost}`}</p>
                   </div>
 
-                  <p className="text-xs font-display font-medium text-text-primary w-20 shrink-0">{mapName}</p>
+                  <div className="w-20 shrink-0">
+                    <p className="text-xs font-display font-medium text-text-primary">{mapName}</p>
+                    <p className="text-[9px] font-body text-text-muted/60">{modeName}</p>
+                  </div>
 
                   <div className="flex items-center gap-3 ml-auto">
                     <div className="text-right">
-                      <div className="flex items-center gap-0.5 text-xs font-mono">
+                      <div className="flex items-center justify-end gap-0.5 text-xs font-mono">
                         <span className="text-text-primary font-semibold">{m.kills}</span>
                         <span className="text-text-muted">/</span>
                         <span className="text-red-400 font-semibold">{m.deaths}</span>
                         <span className="text-text-muted">/</span>
                         <span className="text-text-muted">{m.assists}</span>
                       </div>
-                      <p className="text-[10px] font-mono text-text-muted">{kda} KDA</p>
+                      <p className="text-[10px] font-mono text-text-muted">{kdaText}</p>
                     </div>
                   </div>
                 </div>
