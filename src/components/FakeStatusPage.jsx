@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import Tooltip from "./Tooltip";
 import { invoke } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
 
@@ -32,9 +33,25 @@ const QUEUES = [
 ];
 
 const PREMIER_DIVISIONS = [
-  { id: 0, name: "Style A", icon: "?", color: "#888" },
-  { id: 2, name: "Style B", icon: "○", color: "#FFD740" },
-  { id: 4, name: "Style C", icon: "✕", color: "#CE93D8" },
+  { id: 0, name: "Unranked", icon: "—", color: "#888" },
+  { id: 1, name: "Open 1", icon: "I", color: "#B0BEC5" },
+  { id: 2, name: "Open 2", icon: "II", color: "#B0BEC5" },
+  { id: 3, name: "Open 3", icon: "III", color: "#B0BEC5" },
+  { id: 4, name: "Inter. 1", icon: "I", color: "#FFD740" },
+  { id: 5, name: "Inter. 2", icon: "II", color: "#FFD740" },
+  { id: 6, name: "Inter. 3", icon: "III", color: "#FFD740" },
+  { id: 7, name: "Advanced 1", icon: "I", color: "#CE93D8" },
+  { id: 8, name: "Advanced 2", icon: "II", color: "#CE93D8" },
+  { id: 9, name: "Advanced 3", icon: "III", color: "#CE93D8" },
+  { id: 10, name: "Elite 1", icon: "I", color: "#FF7043" },
+  { id: 11, name: "Elite 2", icon: "II", color: "#FF7043" },
+  { id: 12, name: "Contender", icon: "★", color: "#E040FB" },
+];
+
+const STATUS_MODES = [
+  { id: "online", name: "Online" },
+  { id: "away", name: "Away" },
+  { id: "hidden", name: "Hidden" },
 ];
 
 const SESSION_STATES = [
@@ -81,12 +98,9 @@ function Field({ label, children, tooltip }) {
       <div className="flex items-center gap-1">
         <label className="text-[10px] font-body text-text-muted uppercase tracking-wider">{label}</label>
         {tooltip && (
-          <div className="relative group">
+          <Tooltip text={tooltip}>
             <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-base-500/50 text-[8px] font-bold text-text-muted/70 cursor-help select-none leading-none">?</span>
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 rounded bg-base-900 border border-border text-[10px] font-body text-text-secondary whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 shadow-lg">
-              {tooltip}
-            </div>
-          </div>
+          </Tooltip>
         )}
       </div>
       {children}
@@ -232,6 +246,8 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
   const [logs, setLogs] = useState([]);
   const [logFilter, setLogFilter] = useState("all");
   const logEndRef = useRef(null);
+  const logContainerRef = useRef(null);
+  const isAtBottomRef = useRef(true);
   const pollRef = useRef(null);
   const sendRef = useRef(null);
   const presenceRef = useRef(null);
@@ -249,7 +265,9 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
     competitiveTier: 0,
     leaderboardPosition: 0,
     premierDivision: 0,
+    premierScore: 0,
     rosterName: "",
+    statusMode: "online",
     playerCardId: "",
     playerTitleId: "",
   };
@@ -257,7 +275,7 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
   const initPresence = () => {
     const cfg = loadConfig();
     if (cfg) {
-      const { showTag, premierTag, ...clean } = cfg;
+      const { premierTag, showTag, showAura, showPlating, plating, rosterType, ...clean } = cfg;
       return { ...defaultPresence, ...clean };
     }
     return defaultPresence;
@@ -328,11 +346,20 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
   }, [xmppStatus?.connected]);
 
   useEffect(() => {
-    if (showLogs) logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (showLogs && isAtBottomRef.current) logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs.length, showLogs]);
 
+  const handleLogScroll = () => {
+    const el = logContainerRef.current;
+    if (!el) return;
+    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  };
+
   const sendPresence = async (override) => {
-    const data = { ...(override || savedPresenceRef.current), show: "chat" };
+    const src = override || savedPresenceRef.current;
+    const mode = src.statusMode || "online";
+    const data = { ...src, show: mode === "away" ? "away" : "chat" };
+    if (mode === "hidden") data.rosterType = "ESPORTS";
     await invoke("xmpp_send_fake_presence", { presenceJson: JSON.stringify(data) });
   };
 
@@ -495,6 +522,26 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
       {!showLogs && (
         <motion.div initial="hidden" animate="show" variants={{ hidden: {}, show: { transition: { staggerChildren: 0.06 } } }} className="flex-1 overflow-y-auto space-y-3 pr-1">
           <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
+            <h3 className="text-xs font-display font-medium text-text-secondary uppercase tracking-wider">Status</h3>
+            <CustomSelect
+              value={presence.statusMode === "away" && presence.sessionLoopState === "INGAME" ? "online" : presence.statusMode}
+              onChange={v => update("statusMode", v)}
+              options={STATUS_MODES.filter(m => !(m.id === "away" && presence.sessionLoopState === "INGAME"))}
+              renderOption={m => (
+                <span className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${m.id === "online" ? "bg-status-green" : m.id === "away" ? "bg-yellow-400" : "bg-text-muted/40"}`} />
+                  {m.name}
+                  {m.id === "hidden" && (
+                    <Tooltip text="Hides you from the friends list entirely">
+                      <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-base-500/50 text-[8px] font-bold text-text-muted/70 cursor-help leading-none ml-0.5">?</span>
+                    </Tooltip>
+                  )}
+                </span>
+              )}
+            />
+          </motion.div>
+
+          <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
             <h3 className="text-xs font-display font-medium text-text-secondary uppercase tracking-wider">Rank & Identity</h3>
             <div className="grid grid-cols-3 gap-3">
               <Field label="Rank">
@@ -551,10 +598,10 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
             </div>
           </motion.div>
 
-          <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
+          <div className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
             <h3 className="text-xs font-display font-medium text-text-secondary uppercase tracking-wider">Premier</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Division Style">
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="Division">
                 <CustomSelect value={presence.premierDivision} onChange={v => update("premierDivision", v)} options={PREMIER_DIVISIONS}
                   renderOption={d => <><span className="w-5 h-5 flex items-center justify-center rounded text-xs font-bold shrink-0" style={{ color: d.color }}>{d.icon}</span>{d.name}</>}
                 />
@@ -562,8 +609,11 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
               <Field label="Roster Name">
                 <input value={presence.rosterName} onChange={e => update("rosterName", e.target.value)} placeholder="Team name..." className={inputClass} />
               </Field>
+              <Field label="Score">
+                <NumInput value={presence.premierScore} onChange={v => update("premierScore", v)} className={inputClass} />
+              </Field>
             </div>
-          </motion.div>
+          </div>
         </motion.div>
       )}
 
@@ -581,7 +631,7 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
                 <span className="text-[10px] font-body text-text-muted">{logs.length}</span>
               </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-2 space-y-1 font-mono text-[11px]">
+            <div ref={logContainerRef} onScroll={handleLogScroll} className="flex-1 overflow-y-auto p-2 space-y-1 font-mono text-[11px]">
               {logs.length === 0 && <p className="text-text-muted text-center py-8 font-body text-xs">No logs yet</p>}
               {logs.filter(l => logFilter === "all" || l.direction === logFilter).map((log, i) => (
                 <div key={i} className={`flex items-start gap-2 px-2 py-1 rounded hover:bg-base-700/50 ${log.direction === "own_presence" ? "bg-yellow-500/5 border-l-2 border-yellow-500/40" : ""}`}>

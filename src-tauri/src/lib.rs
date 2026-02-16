@@ -388,42 +388,10 @@ fn xmpp_get_logs(state: tauri::State<'_, XmppShared>) -> String {
 }
 
 #[tauri::command]
-async fn xmpp_get_friends_presences(riot: tauri::State<'_, SharedState>, xmpp: tauri::State<'_, XmppShared>) -> Result<String, String> {
-    let riot = Arc::clone(&riot);
-    let xmpp = Arc::clone(&xmpp);
-    tauri::async_runtime::spawn_blocking(move || riot::xmpp::xmpp_get_friends_presences(&xmpp, &riot))
-        .await
-        .map_err(|e| format!("Task failed: {}", e))?
-}
-
-#[tauri::command]
-async fn xmpp_send_fake_presence(state: tauri::State<'_, XmppShared>, presence_json: String) -> Result<(), String> {
+async fn xmpp_send_fake_presence(state: tauri::State<'_, XmppShared>, riot: tauri::State<'_, SharedState>, presence_json: String) -> Result<(), String> {
     let state = Arc::clone(&state);
-    tauri::async_runtime::spawn_blocking(move || riot::xmpp::xmpp_send_fake_presence(&state, &presence_json))
-        .await
-        .map_err(|e| format!("Task failed: {}", e))?
-}
-
-#[tauri::command]
-async fn xmpp_send_raw(state: tauri::State<'_, XmppShared>, data: String) -> Result<(), String> {
-    let state = Arc::clone(&state);
-    tauri::async_runtime::spawn_blocking(move || riot::xmpp::xmpp_send_raw(&state, &data))
-        .await
-        .map_err(|e| format!("Task failed: {}", e))?
-}
-
-#[tauri::command]
-async fn xmpp_check_local_presences(riot: tauri::State<'_, SharedState>) -> Result<String, String> {
     let riot = Arc::clone(&riot);
-    tauri::async_runtime::spawn_blocking(move || riot::xmpp::xmpp_check_local_presences(&riot))
-        .await
-        .map_err(|e| format!("Task failed: {}", e))?
-}
-
-#[tauri::command]
-async fn local_api_discover(riot: tauri::State<'_, SharedState>) -> Result<String, String> {
-    let riot = Arc::clone(&riot);
-    tauri::async_runtime::spawn_blocking(move || riot::xmpp::local_api_discover(&riot))
+    tauri::async_runtime::spawn_blocking(move || riot::xmpp::xmpp_send_fake_presence(&state, &riot, &presence_json))
         .await
         .map_err(|e| format!("Task failed: {}", e))?
 }
@@ -728,11 +696,7 @@ pub fn run() {
             xmpp_poll,
             xmpp_get_status,
             xmpp_get_logs,
-            xmpp_get_friends_presences,
-            xmpp_send_raw,
             xmpp_send_fake_presence,
-            xmpp_check_local_presences,
-            local_api_discover,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

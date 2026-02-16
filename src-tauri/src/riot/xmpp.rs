@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::Mutex;
@@ -11,15 +10,6 @@ pub struct XmppLog {
     pub timestamp: u64,
 }
 
-pub struct FriendPresence {
-    pub puuid: String,
-    pub game_name: String,
-    pub game_tag: String,
-    pub show: String,
-    pub valorant_data: Option<serde_json::Value>,
-    pub last_updated: u64,
-}
-
 pub struct XmppState {
     pub connected: bool,
     pub stream: Option<native_tls::TlsStream<TcpStream>>,
@@ -30,7 +20,6 @@ pub struct XmppState {
     pub connected_at: Option<Instant>,
     pub real_valorant_data: Option<serde_json::Value>,
     pub real_keystone_ts: Option<u64>,
-    pub friends: HashMap<String, FriendPresence>,
 }
 
 impl Default for XmppState {
@@ -45,7 +34,6 @@ impl Default for XmppState {
             connected_at: None,
             real_valorant_data: None,
             real_keystone_ts: None,
-            friends: HashMap::new(),
         }
     }
 }
@@ -109,80 +97,6 @@ fn extract_real_valorant_payload(data: &str, puuid: &str) -> Option<(serde_json:
         search_from = abs_pos + 1;
     }
     None
-}
-
-fn extract_puuid_from_presence(stanza: &str) -> String {
-    if let Some(pos) = stanza.find("from=\"") {
-        let after = &stanza[pos + 6..];
-        if let Some(at) = after.find('@') {
-            return after[..at].to_string();
-        }
-    }
-    String::new()
-}
-
-fn extract_show(stanza: &str) -> String {
-    if stanza.contains("type=\"unavailable\"") {
-        return "offline".to_string();
-    }
-    if let Some(start) = stanza.find("<show>") {
-        let after = &stanza[start + 6..];
-        if let Some(end) = after.find("</show>") {
-            return after[..end].to_string();
-        }
-    }
-    "online".to_string()
-}
-
-fn extract_valorant_b64(stanza: &str) -> Option<serde_json::Value> {
-    let val_start = stanza.find("<valorant>")?;
-    let val_section = &stanza[val_start..];
-    let p_start = val_section.find("<p>")?;
-    let b64_data = &val_section[p_start + 3..];
-    let b64_end = b64_data.find("</p>")?;
-    let decoded = base64::engine::general_purpose::STANDARD.decode(&b64_data[..b64_end]).ok()?;
-    serde_json::from_slice(&decoded).ok()
-}
-
-fn update_friends_from_xml(data: &str, own_puuid: &str, friends: &mut HashMap<String, FriendPresence>) -> Vec<(String, String)> {
-    let mut debug_logs: Vec<(String, String)> = Vec::new();
-    let mut parsed = 0u32;
-    let mut search_from = 0;
-    while let Some(pos) = data[search_from..].find("<presence") {
-        let abs = search_from + pos;
-        let rest = &data[abs..];
-        let end = match rest.find("</presence>") {
-            Some(e) => e + "</presence>".len(),
-            None => break,
-        };
-        let stanza = &rest[..end];
-        let puuid = extract_puuid_from_presence(stanza);
-        if !puuid.is_empty() && puuid != own_puuid {
-            let show = extract_show(stanza);
-            let val_data = extract_valorant_b64(stanza);
-            let has_val = val_data.is_some();
-            let entry = friends.entry(puuid.clone()).or_insert_with(|| FriendPresence {
-                puuid: puuid.clone(),
-                game_name: String::new(),
-                game_tag: String::new(),
-                show: String::new(),
-                valorant_data: None,
-                last_updated: 0,
-            });
-            entry.show = show.clone();
-            if val_data.is_some() {
-                entry.valorant_data = val_data;
-            }
-            entry.last_updated = now_ms();
-            parsed += 1;
-            debug_logs.push(("f_debug".to_string(), format!("{}.. show={} val_data={}", &puuid[..8.min(puuid.len())], show, has_val)));
-        }
-        search_from = abs + end;
-    }
-    if parsed > 0 {
-        debug_logs.push(("f_debug".to_string(), format!("Parsed {} friend stanzas, total tracked: {}", parsed, friends.len())));
-    }
-    debug_logs
 }
 
 fn now_ms() -> u64 {
@@ -335,7 +249,6 @@ pub fn xmpp_connect(xmpp_state: &Mutex<XmppState>, riot_state: &Mutex<super::typ
             s.connected = false;
         }
         s.logs.clear();
-        s.friends.clear();
         add_log(&mut s.logs, "system", "Fetching PAS token...");
     }
 
@@ -515,14 +428,19 @@ pub fn xmpp_connect(xmpp_state: &Mutex<XmppState>, riot_state: &Mutex<super::typ
     {
         let mut s = xmpp_state.lock().map_err(|e| format!("lock: {}", e))?;
         if let Some(real_data) = extract_real_valorant_payload(&all_chunks, &puuid_clone) {
+            if let Some(obj) = real_data.0.as_object() {
+                let keys: Vec<&String> = obj.keys().collect();
+                add_log(&mut s.logs, "debug", &format!("Presence top-level keys: {:?}", keys));
+                for (k, v) in obj {
+                    if k.contains("resence") || k.contains("oster") || k.contains("remier") || k.contains("eam") {
+                        add_log(&mut s.logs, "debug", &format!("{}: {}", k, v));
+                    }
+                }
+            }
             add_log(&mut s.logs, "system", &format!("Captured real valorant data: {} fields", real_data.0.as_object().map(|o| o.len()).unwrap_or(0)));
             s.real_valorant_data = Some(real_data.0);
             s.real_keystone_ts = Some(real_data.1);
         }
-        let f_logs = update_friends_from_xml(&all_chunks, &puuid_clone, &mut s.friends);
-        for (dir, msg) in f_logs { add_log(&mut s.logs, &dir, &msg); }
-        let friend_count = s.friends.len();
-        add_log(&mut s.logs, "system", &format!("Captured {} friend presences", friend_count));
     }
 
     {
@@ -574,8 +492,6 @@ pub fn xmpp_poll(state: &Mutex<XmppState>) -> Result<String, String> {
             } else {
                 add_log(&mut s.logs, "recv", &data);
             }
-            let f_logs = update_friends_from_xml(&data, &puuid, &mut s.friends);
-            for (dir, msg) in f_logs { add_log(&mut s.logs, &dir, &msg); }
         }
         Ok(_) => {}
         Err(e) if e.contains("connection closed") => {
@@ -591,11 +507,13 @@ pub fn xmpp_poll(state: &Mutex<XmppState>) -> Result<String, String> {
     Ok("ok".to_string())
 }
 
-pub fn xmpp_send_fake_presence(state: &Mutex<XmppState>, presence_json: &str) -> Result<(), String> {
+pub fn xmpp_send_fake_presence(state: &Mutex<XmppState>, riot_state: &Mutex<super::ConnectionState>, presence_json: &str) -> Result<(), String> {
     let mut s = state.lock().map_err(|e| format!("lock: {}", e))?;
     if !s.connected {
         return Err("Not connected to XMPP".to_string());
     }
+
+    let client_version = riot_state.lock().ok().and_then(|r| r.client_version.clone()).unwrap_or_default();
 
     let params: serde_json::Value = serde_json::from_str(presence_json)
         .map_err(|e| format!("parse presence params: {}", e))?;
@@ -641,6 +559,12 @@ pub fn xmpp_send_fake_presence(state: &Mutex<XmppState>, presence_json: &str) ->
             }
         }
 
+        if !client_version.is_empty() {
+            if let Some(ppd) = obj.get_mut("partyPresenceData").and_then(|v| v.as_object_mut()) {
+                ppd.insert("partyClientVersion".into(), serde_json::json!(client_version));
+            }
+        }
+
         if let Some(v) = params["partySize"].as_u64() {
             obj.insert("partySize".into(), serde_json::json!(v));
             if let Some(ppd) = obj.get_mut("partyPresenceData").and_then(|v| v.as_object_mut()) {
@@ -671,6 +595,8 @@ pub fn xmpp_send_fake_presence(state: &Mutex<XmppState>, presence_json: &str) ->
             if let Some(v) = params["premierDivision"].as_u64() { prem.insert("division".into(), serde_json::json!(v)); }
             if let Some(v) = params["premierTag"].as_str().filter(|s| !s.is_empty()) { prem.insert("rosterTag".into(), serde_json::json!(v)); }
             if let Some(v) = params["rosterName"].as_str().filter(|s| !s.is_empty()) { prem.insert("rosterName".into(), serde_json::json!(v)); }
+            if let Some(v) = params["premierScore"].as_u64() { prem.insert("score".into(), serde_json::json!(v)); }
+            if let Some(v) = params["rosterType"].as_str() { prem.insert("rosterType".into(), serde_json::json!(v)); }
         }
     }
 
@@ -698,18 +624,6 @@ pub fn xmpp_send_fake_presence(state: &Mutex<XmppState>, presence_json: &str) ->
     xmpp_write(stream, &xml)?;
     add_log(&mut s.logs, "sent", &format!("[FAKE PRESENCE] show={} tier={} xml_len={}", show, valorant_data["playerPresenceData"]["competitiveTier"], xml.len()));
     add_log(&mut s.logs, "debug", &xml);
-    Ok(())
-}
-
-pub fn xmpp_send_raw(state: &Mutex<XmppState>, data: &str) -> Result<(), String> {
-    let mut s = state.lock().map_err(|e| format!("lock: {}", e))?;
-    if !s.connected {
-        return Err("Not connected".to_string());
-    }
-
-    let stream = s.stream.as_mut().ok_or("No stream")?;
-    xmpp_write(stream, data)?;
-    add_log(&mut s.logs, "sent", data);
     Ok(())
 }
 
@@ -746,148 +660,6 @@ pub fn xmpp_get_status(state: &Mutex<XmppState>) -> String {
         "realTitleId": real_title,
         "premierData": premier_data,
     }).to_string()
-}
-
-pub fn xmpp_check_local_presences(riot_state: &Mutex<super::types::ConnectionState>) -> Result<String, String> {
-    let s = riot_state.lock().map_err(|e| format!("lock: {}", e))?;
-    let port = s.port.ok_or("No port")?;
-    let auth = s.local_auth.clone().ok_or("No local auth")?;
-    let puuid = s.puuid.clone().unwrap_or_default();
-    drop(s);
-
-    let raw = super::http::local_get(port, &auth, "/chat/v4/presences")?;
-    let json: serde_json::Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("parse presences: {}", e))?;
-
-    let presences = json["presences"].as_array().ok_or("No presences array")?;
-    let mut own: Vec<serde_json::Value> = Vec::new();
-    let mut all: Vec<serde_json::Value> = Vec::new();
-    for p in presences {
-        let mut entry = serde_json::json!({
-            "puuid": p["puuid"],
-            "product": p["product"],
-            "resource": p["resource"],
-            "state": p["state"],
-            "time": p["time"],
-            "game_name": p["game_name"],
-            "game_tag": p["game_tag"],
-            "pid": p["pid"],
-        });
-        if let Some(priv_b64) = p["private"].as_str().filter(|s| !s.is_empty()) {
-            if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(priv_b64) {
-                if let Ok(priv_json) = serde_json::from_slice::<serde_json::Value>(&decoded) {
-                    entry["private_decoded"] = priv_json;
-                }
-            }
-        }
-        if let Some(basic_b64) = p["basic"].as_str().filter(|s| !s.is_empty()) {
-            entry["basic"] = serde_json::Value::String(basic_b64.to_string());
-        }
-        let is_own = p["puuid"].as_str() == Some(&puuid);
-        if is_own {
-            own.push(entry.clone());
-        }
-        all.push(entry);
-    }
-
-    Ok(serde_json::json!({
-        "total_presences": presences.len(),
-        "own_presences": own,
-        "all_presences": all,
-        "my_puuid": puuid,
-    }).to_string())
-}
-
-pub fn local_api_discover(riot_state: &Mutex<super::types::ConnectionState>) -> Result<String, String> {
-    let s = riot_state.lock().map_err(|e| format!("lock: {}", e))?;
-    let port = s.port.ok_or("No port")?;
-    let auth = s.local_auth.clone().ok_or("No local auth")?;
-    drop(s);
-
-    let help = super::http::local_get(port, &auth, "/help");
-    let chat_me = super::http::local_get(port, &auth, "/chat/v1/me");
-    let chat_session = super::http::local_get(port, &auth, "/chat/v1/session");
-
-    let mut results = serde_json::json!({});
-    if let Ok(h) = &help {
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(h) {
-            let mut chat_endpoints: Vec<String> = Vec::new();
-            if let Some(obj) = v.as_object() {
-                for (key, val) in obj {
-                    if key.contains("chat") || key.contains("presence") || key.contains("roster") {
-                        chat_endpoints.push(format!("{}: {}", key, val));
-                    }
-                }
-            }
-            results["chat_endpoints"] = serde_json::json!(chat_endpoints);
-            results["total_endpoints"] = serde_json::json!(v.as_object().map(|o| o.len()).unwrap_or(0));
-        } else {
-            results["help_raw"] = serde_json::json!(h[..h.len().min(2000)]);
-        }
-    } else {
-        results["help_error"] = serde_json::json!(help.unwrap_err());
-    }
-
-    if let Ok(me) = &chat_me {
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(me) {
-            results["chat_me"] = v;
-        }
-    }
-    if let Ok(sess) = &chat_session {
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(sess) {
-            results["chat_session"] = v;
-        }
-    }
-
-    Ok(serde_json::to_string_pretty(&results).unwrap_or_default())
-}
-
-pub fn xmpp_get_friends_presences(
-    xmpp_state: &Mutex<XmppState>,
-    riot_state: &Mutex<super::types::ConnectionState>,
-) -> Result<String, String> {
-    let unresolved: Vec<String> = {
-        let s = xmpp_state.lock().map_err(|e| format!("lock: {}", e))?;
-        s.friends.iter()
-            .filter(|(_, f)| f.game_name.is_empty())
-            .map(|(puuid, _)| puuid.clone())
-            .collect()
-    };
-
-    if !unresolved.is_empty() {
-        if let Ok(names_raw) = super::game::resolve_player_names(riot_state, unresolved) {
-            if let Ok(names) = serde_json::from_str::<Vec<serde_json::Value>>(&names_raw) {
-                let mut s = xmpp_state.lock().map_err(|e| format!("lock: {}", e))?;
-                for entry in &names {
-                    let puuid = entry["Subject"].as_str().unwrap_or_default();
-                    if let Some(friend) = s.friends.get_mut(puuid) {
-                        friend.game_name = entry["GameName"].as_str().unwrap_or_default().to_string();
-                        friend.game_tag = entry["TagLine"].as_str().unwrap_or_default().to_string();
-                    }
-                }
-            }
-        }
-    }
-
-    let s = xmpp_state.lock().map_err(|e| format!("lock: {}", e))?;
-    let friends: Vec<serde_json::Value> = s.friends.values().map(|f| {
-        let mut obj = serde_json::json!({
-            "puuid": f.puuid,
-            "game_name": f.game_name,
-            "game_tag": f.game_tag,
-            "show": f.show,
-            "last_updated": f.last_updated,
-        });
-        if let Some(ref vd) = f.valorant_data {
-            obj["valorant_data"] = vd.clone();
-        }
-        obj
-    }).collect();
-
-    Ok(serde_json::json!({
-        "friends": friends,
-        "total": friends.len(),
-    }).to_string())
 }
 
 pub fn xmpp_get_logs(state: &Mutex<XmppState>) -> String {

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import Tooltip from "./Tooltip";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -160,14 +161,11 @@ export default function MiscPage({ connected, autoUnqueue, onAutoUnqueueChange, 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             <h3 className="text-xs font-display font-medium text-text-secondary uppercase tracking-wider">Menu Video</h3>
-            <div className="relative group">
+            <Tooltip text="This feature can be finicky — some videos may not work or display correctly.">
               <div className="w-3.5 h-3.5 rounded-full bg-base-500 flex items-center justify-center cursor-help">
                 <span className="text-[9px] font-display font-bold text-text-muted">?</span>
               </div>
-              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2.5 py-1.5 rounded-lg bg-base-900 border border-border text-[10px] font-body text-text-muted whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-150 z-50">
-                This feature can be finicky — some videos may not work or display correctly.
-              </div>
-            </div>
+            </Tooltip>
           </div>
           <div className="flex items-center gap-2">
             {videoConfig && (
