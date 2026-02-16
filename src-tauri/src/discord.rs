@@ -34,7 +34,11 @@ pub fn start_rpc(state: &Mutex<DiscordState>) -> Result<(), String> {
                 .large_text("Valorant")
                 .small_image("logo")
                 .small_text("Valorant Thing"),
-        );
+        )
+        .buttons(vec![
+            activity::Button::new("Download Valorant Thing", "https://github.com/AjaxFNC-YT/Valorant-Thing/releases"),
+            activity::Button::new("GitHub", "https://github.com/AjaxFNC-YT/Valorant-Thing"),
+        ]);
     match client.set_activity(payload) {
         Ok(_) => eprintln!("[discord] Activity set successfully"),
         Err(e) => eprintln!("[discord] set_activity failed: {}", e),
@@ -67,7 +71,11 @@ pub fn update_rpc(state: &Mutex<DiscordState>, details: &str, rpc_state: &str, l
         let payload = activity::Activity::new()
             .state(rpc_state)
             .details(details)
-            .assets(assets);
+            .assets(assets)
+            .buttons(vec![
+                activity::Button::new("Download Valorant Thing", "https://github.com/AjaxFNC-YT/Valorant-Thing/releases"),
+                activity::Button::new("GitHub", "https://github.com/AjaxFNC-YT/Valorant-Thing"),
+            ]);
         client.set_activity(payload).map_err(|e| format!("RPC update: {}", e))?;
     }
     Ok(())
