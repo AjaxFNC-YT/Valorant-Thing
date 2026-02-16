@@ -612,24 +612,24 @@ function PlayerCard({ player, agents, tiers, isSelf }) {
                 <span className="text-[9px] font-display font-bold text-val-red/70 uppercase tracking-wider ml-0.5">you</span>
               )}
             </div>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[11px] font-body text-text-primary">
+            <div className="flex items-center gap-1.5 overflow-hidden whitespace-nowrap">
+              <span className="text-[11px] font-body text-text-primary shrink-0">
                 {displayLevel > 0 ? `Level ${displayLevel}` : "Level ?"}
               </span>
-              <span className="text-[11px] text-text-primary/50">·</span>
+              <span className="text-[11px] text-text-primary/50 shrink-0">·</span>
               <img
                 src={tierInfo?.icon || "https://media.valorant-api.com/competitivetiers/03621f52-342b-cf4e-4f86-9350a49c6d04/0/smallicon.png"}
-                alt="" className="w-3.5 h-3.5"
+                alt="" className="w-3.5 h-3.5 shrink-0"
               />
               <span className="text-[11px] font-display font-semibold text-text-primary">
                 {tierInfo?.name || "Unranked"}
               </span>
-              <span className="text-[11px] font-body text-text-primary/70">{mmr?.ranking_in_tier ?? 0}RR</span>
+              <span className="text-[11px] font-body text-text-primary/70 shrink-0">{mmr?.ranking_in_tier ?? 0}RR</span>
               {peakTierInfo && mmr?.peaktier > 0 && (
                 <>
-                  <span className="text-[11px] text-text-primary/50">·</span>
-                  <span className="text-[11px] font-body text-text-primary">Peak:</span>
-                  <img src={peakTierInfo.icon} alt="" className="w-3.5 h-3.5" />
+                  <span className="text-[11px] text-text-primary/50 shrink-0">·</span>
+                  <span className="text-[11px] font-body text-text-primary shrink-0">Peak:</span>
+                  <img src={peakTierInfo.icon} alt="" className="w-3.5 h-3.5 shrink-0" />
                   <span className="text-[11px] font-display font-semibold text-text-primary">{peakTierInfo.name}</span>
                   <span className="text-[11px] font-body text-text-primary/70">{mmr?.peak_rr ?? 0}RR</span>
                 </>
