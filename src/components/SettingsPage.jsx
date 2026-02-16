@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { HexColorPicker, HexColorInput } from "react-colorful";
 import { motion } from "framer-motion";
 import { open } from "@tauri-apps/plugin-shell";
@@ -175,6 +176,9 @@ export default function SettingsPage({
   const fileRef = useRef(null);
   const configFileRef = useRef(null);
   const [presetOpen, setPresetOpen] = useState(false);
+  const [appVersion, setAppVersion] = useState("...");
+
+  useEffect(() => { invoke("get_app_version").then(setAppVersion).catch(() => {}); }, []);
 
   const exportTheme = () => {
     const blob = new Blob([JSON.stringify(customTheme, null, 2)], { type: "application/json" });
@@ -605,7 +609,7 @@ export default function SettingsPage({
 
       <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-1">
         <h2 className="text-sm font-display font-semibold text-text-primary">About</h2>
-        <p className="text-xs font-body text-text-secondary">Valorant Thing v1.5.1</p>
+        <p className="text-xs font-body text-text-secondary">Valorant Thing v{appVersion}</p>
         <p className="text-xs font-body text-text-muted">
           Created by AjaxFNC · Built with Rust & Tauri · Uses official Valorant APIs
         </p>

@@ -401,6 +401,11 @@ fn exit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+#[tauri::command]
+fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[tauri::command]
@@ -697,6 +702,7 @@ pub fn run() {
             xmpp_get_status,
             xmpp_get_logs,
             xmpp_send_fake_presence,
+            get_app_version,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
