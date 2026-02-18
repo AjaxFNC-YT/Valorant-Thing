@@ -12,6 +12,7 @@ const QUEUES = [
   { id: "swiftplay", label: "Swiftplay" },
   { id: "deathmatch", label: "Deathmatch" },
   { id: "hurm", label: "Team Deathmatch" },
+  { id: "skirmish", label: "Skirmish (LTM)" },
   { id: "spikerush", label: "Spike Rush" },
   { id: "premier", label: "Premier" },
 ];

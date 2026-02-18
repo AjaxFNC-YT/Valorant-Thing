@@ -26,10 +26,10 @@ const QUEUES = [
   { id: "spikerush", label: "Spike Rush" },
   { id: "deathmatch", label: "Deathmatch" },
   { id: "swiftplay", label: "Swiftplay" },
-  { id: "hurm", label: "Team Deathmatch" },
+  { id: "hurm", label: "Team Deathmatch" }, 
   { id: "premier", label: "Premier" },
   { id: "ggteam", label: "Escalation" },
-  { id: "onefa", label: "Replication" },
+  { id: "skirmish", label: "Skirmish" },
 ];
 
 const PREMIER_DIVISIONS = [
