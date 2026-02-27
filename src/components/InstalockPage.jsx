@@ -101,8 +101,12 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
   const [profiles, setProfiles] = useState([]);
   const [activeProfileId, setActiveProfileId] = useState(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const [renamingProfile, setRenamingProfile] = useState(null);
-  const [renameValue, setRenameValue] = useState("");
+  const [dotMenuId, setDotMenuId] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [importMode, setImportMode] = useState(false);
+  const [importValue, setImportValue] = useState("");
+  const [nameModal, setNameModal] = useState(null);
+  const [nameModalValue, setNameModalValue] = useState("");
   const profileMenuRef = useRef(null);
   const configLoaded = useRef(false);
 
@@ -171,7 +175,7 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
 
   useEffect(() => {
     if (!profileMenuOpen) return;
-    const handler = (e) => { if (profileMenuRef.current && !profileMenuRef.current.contains(e.target)) { setProfileMenuOpen(false); setRenamingProfile(null); } };
+    const handler = (e) => { if (profileMenuRef.current && !profileMenuRef.current.contains(e.target)) { setProfileMenuOpen(false); setDotMenuId(null); setImportMode(false); setImportValue(""); } };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [profileMenuOpen]);
@@ -194,41 +198,92 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
     setProfileMenuOpen(false);
   };
 
-  const createProfile = () => {
-    const id = Date.now().toString(36);
-    const name = `Profile ${profiles.length + 1}`;
-    const perMap = {};
-    for (const [mapId, agent] of Object.entries(perMapSelections)) perMap[mapId] = slimAgent(agent);
-    const saved = profiles.map(p => p.id === activeProfileId ? { ...p, defaultAgent: slimAgent(selectedAgent), perMap } : p);
-    const updated = [...saved, { id, name, defaultAgent: null, perMap: {} }];
-    setSelectedAgent(null);
-    setPerMapSelections({});
-    setActiveProfileId(id);
-    localStorage.setItem(ACTIVE_PROFILE_KEY, id);
-    setProfiles(updated);
-    saveProfilesLS(updated);
+  const startCreateProfile = () => {
     setProfileMenuOpen(false);
+    setNameModal({ type: "new" });
+    setNameModalValue(`Profile ${profiles.length + 1}`);
   };
 
-  const deleteProfile = () => {
+  const deleteProfileById = (id) => {
     if (profiles.length <= 1) return;
-    const remaining = profiles.filter(p => p.id !== activeProfileId);
-    const target = remaining[0];
-    setSelectedAgent(resolveAgent(agents, target.defaultAgent));
-    setPerMapSelections(restorePerMap(agents, target.perMap));
-    setActiveProfileId(target.id);
-    localStorage.setItem(ACTIVE_PROFILE_KEY, target.id);
+    const remaining = profiles.filter(p => p.id !== id);
+    if (id === activeProfileId) {
+      const target = remaining[0];
+      setSelectedAgent(resolveAgent(agents, target.defaultAgent));
+      setPerMapSelections(restorePerMap(agents, target.perMap));
+      setActiveProfileId(target.id);
+      localStorage.setItem(ACTIVE_PROFILE_KEY, target.id);
+    }
     setProfiles(remaining);
     saveProfilesLS(remaining);
+    setConfirmDeleteId(null);
+    setDotMenuId(null);
     setProfileMenuOpen(false);
   };
 
-  const finishRename = () => {
-    if (!renamingProfile || !renameValue.trim()) { setRenamingProfile(null); return; }
-    const updated = profiles.map(p => p.id === renamingProfile ? { ...p, name: renameValue.trim() } : p);
-    setProfiles(updated);
-    saveProfilesLS(updated);
-    setRenamingProfile(null);
+  const shareProfile = (id) => {
+    const profile = profiles.find(p => p.id === id);
+    if (!profile) return;
+    navigator.clipboard.writeText(btoa(JSON.stringify({ name: profile.name, defaultAgent: profile.defaultAgent, perMap: profile.perMap })));
+    setDotMenuId(null);
+    setProfileMenuOpen(false);
+  };
+
+  const startImport = () => {
+    try {
+      const data = JSON.parse(atob(importValue.trim()));
+      setImportMode(false);
+      setImportValue("");
+      setProfileMenuOpen(false);
+      setNameModal({ type: "import", importData: data });
+      setNameModalValue(data.name || `Imported ${profiles.length + 1}`);
+    } catch {}
+  };
+
+  const startRename = (id) => {
+    const p = profiles.find(pr => pr.id === id);
+    setDotMenuId(null);
+    setProfileMenuOpen(false);
+    setNameModal({ type: "rename", profileId: id });
+    setNameModalValue(p?.name || "");
+  };
+
+  const handleNameModalConfirm = () => {
+    const name = nameModalValue.trim();
+    if (!name || !nameModal) return;
+    if (nameModal.type === "new") {
+      const id = Date.now().toString(36);
+      const perMap = {};
+      for (const [mapId, agent] of Object.entries(perMapSelections)) perMap[mapId] = slimAgent(agent);
+      const saved = profiles.map(p => p.id === activeProfileId ? { ...p, defaultAgent: slimAgent(selectedAgent), perMap } : p);
+      const updated = [...saved, { id, name, defaultAgent: null, perMap: {} }];
+      setSelectedAgent(null);
+      setPerMapSelections({});
+      setActiveProfileId(id);
+      localStorage.setItem(ACTIVE_PROFILE_KEY, id);
+      setProfiles(updated);
+      saveProfilesLS(updated);
+    } else if (nameModal.type === "import") {
+      const id = Date.now().toString(36);
+      const perMap = {};
+      for (const [mapId, agent] of Object.entries(perMapSelections)) perMap[mapId] = slimAgent(agent);
+      const saved = profiles.map(p => p.id === activeProfileId ? { ...p, defaultAgent: slimAgent(selectedAgent), perMap } : p);
+      const d = nameModal.importData;
+      const np = { id, name, defaultAgent: d?.defaultAgent || null, perMap: d?.perMap || {} };
+      const updated = [...saved, np];
+      setSelectedAgent(resolveAgent(agents, np.defaultAgent));
+      setPerMapSelections(restorePerMap(agents, np.perMap));
+      setActiveProfileId(id);
+      localStorage.setItem(ACTIVE_PROFILE_KEY, id);
+      setProfiles(updated);
+      saveProfilesLS(updated);
+    } else if (nameModal.type === "rename") {
+      const updated = profiles.map(p => p.id === nameModal.profileId ? { ...p, name } : p);
+      setProfiles(updated);
+      saveProfilesLS(updated);
+    }
+    setNameModal(null);
+    setNameModalValue("");
   };
 
   const FREE_AGENTS = new Set(["brimstone", "jett", "phoenix", "sage", "sova"]);
@@ -305,62 +360,6 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
   return (
     <div className="flex-1 flex flex-col min-h-0 p-4 gap-3">
       <div className="flex items-center gap-2 shrink-0">
-        <div className="relative" ref={profileMenuRef}>
-          <button
-            onClick={() => setProfileMenuOpen(!profileMenuOpen)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-base-700 border border-border rounded-lg text-xs font-display text-text-secondary hover:text-text-primary transition-colors"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="shrink-0">
-              <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
-            </svg>
-            <span className="max-w-[100px] truncate">{activeProfile?.name || "Default"}</span>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 text-text-muted">
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </button>
-          {profileMenuOpen && (
-            <div className="absolute top-full left-0 mt-1 min-w-[180px] bg-base-700 border border-border rounded-lg shadow-xl z-20 overflow-hidden">
-              {profiles.map(p => (
-                <div key={p.id} className={`flex items-center gap-2 px-3 py-2 text-xs font-body hover:bg-base-600 transition-colors cursor-pointer ${p.id === activeProfileId ? "text-accent-blue" : "text-text-secondary"}`}>
-                  {renamingProfile === p.id ? (
-                    <input
-                      value={renameValue}
-                      onChange={e => setRenameValue(e.target.value)}
-                      onBlur={finishRename}
-                      onKeyDown={e => { if (e.key === "Enter") finishRename(); if (e.key === "Escape") setRenamingProfile(null); }}
-                      className="flex-1 bg-transparent outline-none text-text-primary text-xs"
-                      autoFocus
-                      onClick={e => e.stopPropagation()}
-                    />
-                  ) : (
-                    <span className="flex-1 truncate" onClick={() => switchProfile(p.id)}>{p.name}</span>
-                  )}
-                  {p.id === activeProfileId && renamingProfile !== p.id && (
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0">
-                      <path d="M20 6L9 17l-5-5" />
-                    </svg>
-                  )}
-                </div>
-              ))}
-              <div className="border-t border-border" />
-              <button onClick={createProfile} className="w-full px-3 py-2 text-left text-xs font-body text-text-muted hover:text-text-primary hover:bg-base-600 transition-colors">
-                + New Profile
-              </button>
-              <button
-                onClick={() => { if (activeProfile) { setRenamingProfile(activeProfileId); setRenameValue(activeProfile.name); } }}
-                className="w-full px-3 py-2 text-left text-xs font-body text-text-muted hover:text-text-primary hover:bg-base-600 transition-colors"
-              >
-                Rename
-              </button>
-              {profiles.length > 1 && (
-                <button onClick={deleteProfile} className="w-full px-3 py-2 text-left text-xs font-body text-val-red/70 hover:text-val-red hover:bg-base-600 transition-colors">
-                  Delete
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
         <div className="flex bg-base-700 rounded-lg p-0.5 border border-border">
           <button
             onClick={() => { setSubTab("all"); setSelectedMap(null); setSearch(""); }}
@@ -384,6 +383,83 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
             {MAP_ICON}
             Per Map
           </button>
+        </div>
+
+        <div className="relative" ref={profileMenuRef}>
+          <button
+            onClick={() => { setProfileMenuOpen(!profileMenuOpen); setDotMenuId(null); setImportMode(false); setImportValue(""); }}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-base-700 border border-border rounded-lg text-xs font-display text-text-secondary hover:text-text-primary transition-colors"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="shrink-0">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
+            </svg>
+            <span className="max-w-[100px] truncate">{activeProfile?.name || "Default"}</span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 text-text-muted">
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          {profileMenuOpen && (
+            <div className="absolute top-full left-0 mt-1 min-w-[200px] bg-base-700 border border-border rounded-lg shadow-xl z-20">
+              {profiles.map(p => (
+                <div key={p.id} className={`relative flex items-center gap-1.5 px-3 py-2 text-xs font-body hover:bg-base-600 transition-colors ${p.id === activeProfileId ? "text-accent-blue" : "text-text-secondary"}`}>
+                  <span className="flex-1 truncate cursor-pointer" onClick={() => switchProfile(p.id)}>{p.name}</span>
+                  {p.id === activeProfileId && (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0">
+                      <path d="M20 6L9 17l-5-5" />
+                    </svg>
+                  )}
+                  <button onClick={e => { e.stopPropagation(); setDotMenuId(dotMenuId === p.id ? null : p.id); }} className="shrink-0 p-0.5 rounded hover:bg-base-500 text-text-muted hover:text-text-primary transition-colors">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+                  </button>
+                  {dotMenuId === p.id && (
+                    <div className="absolute right-2 top-full -mt-0.5 bg-base-600 border border-border rounded-lg shadow-xl z-30 min-w-[130px] overflow-hidden">
+                      <button onClick={() => startRename(p.id)} className="w-full px-3 py-1.5 text-left text-xs font-body text-text-secondary hover:text-text-primary hover:bg-base-500 transition-colors flex items-center gap-2">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0"><path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+                        Rename
+                      </button>
+                      <button onClick={() => shareProfile(p.id)} className="w-full px-3 py-1.5 text-left text-xs font-body text-text-secondary hover:text-text-primary hover:bg-base-500 transition-colors flex items-center gap-2">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                        Share
+                      </button>
+                      {profiles.length > 1 && (
+                        <button onClick={() => { setConfirmDeleteId(p.id); setDotMenuId(null); setProfileMenuOpen(false); }} className="w-full px-3 py-1.5 text-left text-xs font-body text-val-red/70 hover:text-val-red hover:bg-base-500 transition-colors flex items-center gap-2">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+              <div className="border-t border-border" />
+              {importMode ? (
+                <div className="px-2.5 py-2 flex gap-1.5">
+                  <input
+                    value={importValue}
+                    onChange={e => setImportValue(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") startImport(); if (e.key === "Escape") { setImportMode(false); setImportValue(""); } }}
+                    placeholder="Paste code..."
+                    className="flex-1 min-w-0 bg-base-800 border border-border rounded px-2 py-1 text-xs font-body text-text-primary placeholder:text-text-muted focus:outline-none"
+                    autoFocus
+                  />
+                  <button onClick={startImport} className="px-2 py-1 bg-accent-blue/20 text-accent-blue rounded text-xs font-body hover:bg-accent-blue/30 transition-colors shrink-0">
+                    Go
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <button onClick={startCreateProfile} className="w-full px-3 py-2 text-left text-xs font-body text-text-muted hover:text-text-primary hover:bg-base-600 transition-colors flex items-center gap-2">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    New Profile
+                  </button>
+                  <button onClick={() => setImportMode(true)} className="w-full px-3 py-2 text-left text-xs font-body text-text-muted hover:text-text-primary hover:bg-base-600 transition-colors flex items-center gap-2">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Import Profile
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex-1" />
@@ -443,6 +519,59 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
           />
         )}
       </div>
+
+      {nameModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => { setNameModal(null); setNameModalValue(""); }}>
+          <div className="bg-base-700 border border-border rounded-xl p-5 max-w-xs w-full space-y-3 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2">
+              {nameModal.type === "new" && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent-blue shrink-0"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>}
+              {nameModal.type === "import" && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent-blue shrink-0"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
+              {nameModal.type === "rename" && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent-blue shrink-0"><path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>}
+              <p className="text-sm font-display font-semibold text-text-primary">
+                {nameModal.type === "new" ? "New Profile" : nameModal.type === "import" ? "Import Profile" : "Rename Profile"}
+              </p>
+            </div>
+            <input
+              value={nameModalValue}
+              onChange={e => setNameModalValue(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && nameModalValue.trim()) handleNameModalConfirm(); if (e.key === "Escape") { setNameModal(null); setNameModalValue(""); } }}
+              placeholder="Profile name..."
+              className="w-full px-3 py-2 bg-base-800 border border-border rounded-lg text-xs font-body text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-light transition-colors"
+              autoFocus
+            />
+            <div className="flex gap-2 justify-end pt-1">
+              <button onClick={() => { setNameModal(null); setNameModalValue(""); }} className="px-3 py-1.5 rounded-lg text-xs font-body bg-base-600 border border-border text-text-secondary hover:text-text-primary transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleNameModalConfirm} disabled={!nameModalValue.trim()} className="px-3 py-1.5 rounded-lg text-xs font-body bg-accent-blue/20 text-accent-blue hover:bg-accent-blue/30 transition-colors disabled:opacity-40 disabled:pointer-events-none">
+                {nameModal.type === "rename" ? "Rename" : "Create"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDeleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setConfirmDeleteId(null)}>
+          <div className="bg-base-700 border border-border rounded-xl p-5 max-w-xs w-full space-y-3 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-val-red shrink-0"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+              <p className="text-sm font-display font-semibold text-text-primary">Delete Profile</p>
+            </div>
+            <p className="text-xs font-body text-text-muted">
+              Are you sure you want to delete <span className="text-text-secondary font-semibold">{profiles.find(p => p.id === confirmDeleteId)?.name}</span>?
+            </p>
+            <div className="flex gap-2 justify-end pt-1">
+              <button onClick={() => setConfirmDeleteId(null)} className="px-3 py-1.5 rounded-lg text-xs font-body bg-base-600 border border-border text-text-secondary hover:text-text-primary transition-colors">
+                Cancel
+              </button>
+              <button onClick={() => deleteProfileById(confirmDeleteId)} className="px-3 py-1.5 rounded-lg text-xs font-body bg-val-red/20 text-val-red hover:bg-val-red/30 transition-colors">
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
