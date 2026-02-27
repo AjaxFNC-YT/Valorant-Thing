@@ -41,6 +41,17 @@ fn is_valorant_running() -> bool {
 }
 
 #[tauri::command]
+fn is_valorant_foreground() -> bool {
+    riot::is_valorant_foreground()
+}
+
+#[tauri::command]
+fn get_valorant_monitor() -> Result<String, String> {
+    let (x, y, w, h) = riot::get_valorant_monitor()?;
+    Ok(serde_json::json!({ "x": x, "y": y, "width": w, "height": h }).to_string())
+}
+
+#[tauri::command]
 fn find_valorant_path() -> Result<String, String> {
     riot::find_valorant_path()
 }
@@ -62,6 +73,29 @@ fn force_copy_file(source: String, dest: String) -> Result<(), String> {
     }
     std::fs::copy(&source, &dest).map_err(|e| format!("copy {} -> {}: {}", source, dest, e))?;
     Ok(())
+}
+
+#[tauri::command]
+fn remove_file(path: String) -> Result<(), String> {
+    if std::path::Path::new(&path).exists() {
+        std::fs::remove_file(&path).map_err(|e| format!("remove {}: {}", path, e))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn list_dir(path: String) -> Result<Vec<String>, String> {
+    let dir = std::path::Path::new(&path);
+    if !dir.is_dir() { return Ok(vec![]); }
+    let mut entries = vec![];
+    for entry in std::fs::read_dir(dir).map_err(|e| format!("readdir {}: {}", path, e))? {
+        if let Ok(e) = entry {
+            if let Some(name) = e.file_name().to_str() {
+                entries.push(name.to_string());
+            }
+        }
+    }
+    Ok(entries)
 }
 
 #[tauri::command]
@@ -547,23 +581,11 @@ async fn resolve_player_names(state: tauri::State<'_, SharedState>, puuids: Vec<
 }
 
 #[tauri::command]
-async fn henrik_get_account(puuid: String, api_key: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let path = format!("/valorant/v1/by-puuid/account/{}", puuid);
-        riot::henrik_api_get(&path, &api_key)
-    })
-    .await
-    .map_err(|e| format!("Task failed: {}", e))?
-}
-
-#[tauri::command]
-async fn henrik_get_mmr(puuid: String, region: String, api_key: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let path = format!("/valorant/v2/by-puuid/mmr/{}/{}", region, puuid);
-        riot::henrik_api_get(&path, &api_key)
-    })
-    .await
-    .map_err(|e| format!("Task failed: {}", e))?
+async fn get_player_level_from_history(state: tauri::State<'_, SharedState>, target_puuid: String) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::get_player_level_from_history(&state, &target_puuid))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[tauri::command]
@@ -599,6 +621,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             riot::logging::init(app.handle().clone());
             let show_item = MenuItemBuilder::with_id("show", "Show").build(app)?;
@@ -650,9 +673,13 @@ pub fn run() {
             get_status,
             get_player,
             is_valorant_running,
+            is_valorant_foreground,
+            get_valorant_monitor,
             find_valorant_path,
             compute_file_hash,
             force_copy_file,
+            remove_file,
+            list_dir,
             toggle_devtools,
             check_node_installed,
             health_check,
@@ -671,8 +698,7 @@ pub fn run() {
             check_loadout,
             get_match_page,
             resolve_player_names,
-            henrik_get_account,
-            henrik_get_mmr,
+            get_player_level_from_history,
             splooshima_lookup,
             get_party,
             get_friends,

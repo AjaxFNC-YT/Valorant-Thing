@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 
-const EXCLUDED_MAPS = ["The Range", "District", "Kasbah", "Drift", "Glitch", "Piazza", "Basic Training", "Skirmish A", "Skirmish B", "Skirmish C"];
+const EXCLUDED_MAPS = ["The Range", "Basic Training", "Skirmish A", "Skirmish B", "Skirmish C"];
 const CONFIG_KEY = "mapdodge-config";
 const noAnim = () => localStorage.getItem("disable_animations") === "true";
 const T0 = { duration: 0 };

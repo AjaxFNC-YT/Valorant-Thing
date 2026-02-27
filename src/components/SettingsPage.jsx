@@ -85,6 +85,51 @@ function DelaySlider({ label, desc, value, onChange }) {
   );
 }
 
+const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"]);
+const KEY_MAP = { Control: "Ctrl", Meta: "Super", " ": "Space" };
+
+function DodgeKeybindSetting() {
+  const [keybind, setKeybind] = useState(() => localStorage.getItem("dodge_keybind") || "Ctrl+D");
+  const [recording, setRecording] = useState(false);
+
+  const handleRecord = useCallback(() => {
+    setRecording(true);
+    const handler = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (MODIFIER_KEYS.has(e.key)) return;
+      const parts = [];
+      if (e.ctrlKey) parts.push("Ctrl");
+      if (e.shiftKey) parts.push("Shift");
+      if (e.altKey) parts.push("Alt");
+      parts.push(KEY_MAP[e.key] || e.key.toUpperCase());
+      const combo = parts.join("+");
+      setKeybind(combo);
+      localStorage.setItem("dodge_keybind", combo);
+      setRecording(false);
+      window.removeEventListener("keydown", handler, true);
+    };
+    window.addEventListener("keydown", handler, true);
+  }, []);
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-body text-text-muted">Dodge keybind</p>
+      <button
+        onClick={handleRecord}
+        className={`w-full px-3 py-2 rounded-lg text-xs font-body text-left transition-colors border ${
+          recording
+            ? "bg-val-red/10 border-val-red/40 text-val-red animate-pulse"
+            : "bg-base-600 border-border text-text-secondary hover:text-text-primary hover:bg-base-500"
+        }`}
+      >
+        {recording ? "Press a key combo..." : keybind}
+      </button>
+      <p className="text-[10px] font-body text-text-muted">Works globally while in agent select</p>
+    </div>
+  );
+}
+
 function rgbToHex(r, g, b) {
   return `#${Math.max(0,Math.min(255,r)).toString(16).padStart(2,"0")}${Math.max(0,Math.min(255,g)).toString(16).padStart(2,"0")}${Math.max(0,Math.min(255,b)).toString(16).padStart(2,"0")}`;
 }
@@ -150,16 +195,16 @@ function buildPreviewGradient(ct) {
 const CONFIG_KEYS = [
   "show_logs", "app_theme", "simplified_theme", "custom_theme",
   "discord_rpc", "start_with_windows", "start_minimized", "minimize_to_tray",
-  "henrik_api_key", "splooshima_api_key", "mapdodge-config", "auto_unqueue", "auto_requeue",
+  "splooshima_api_key", "mapdodge-config", "auto_unqueue", "auto_requeue",
   "instalock_select_delay", "instalock_lock_delay", "instalock-config",
-  "fake-status-config",
+  "fake-status-config", "overlay_enabled", "overlay_linger",
+  "notifications_enabled", "notification_position", "dodge_keybind",
 ];
 
 export default function SettingsPage({
   showLogs, onShowLogsChange,
   selectDelay, onSelectDelayChange,
   lockDelay, onLockDelayChange,
-  henrikApiKey, onHenrikApiKeyChange,
   splooshimaApiKey, onSplooshimaApiKeyChange,
   theme, onThemeChange,
   startWithWindows, onStartWithWindowsChange,
@@ -172,6 +217,10 @@ export default function SettingsPage({
   devMode, onDevModeChange,
   disableAnimations, onDisableAnimationsChange,
   updateInfo, onShowUpdate,
+  overlayEnabled, onOverlayEnabledChange,
+  overlayLinger, onOverlayLingerChange,
+  notificationsEnabled, onNotificationsEnabledChange,
+  notificationPosition, onNotificationPositionChange,
 }) {
   const fileRef = useRef(null);
   const configFileRef = useRef(null);
@@ -301,7 +350,7 @@ export default function SettingsPage({
           <h2 className="text-sm font-display font-semibold text-text-primary">Splooshima API Key</h2>
         </div>
         <p className="text-xs font-body text-text-muted">
-          Bypassing hidden names, tags, and account levels.
+          Fallback for player names, levels, and viewing rank information. The app attempts to resolve it itself, and Splooshima is used if that fails.
         </p>
         <input
           type="password"
@@ -321,42 +370,84 @@ export default function SettingsPage({
         </button>
       </motion.div>
 
-      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
-        <div className="flex items-center gap-2">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted">
-            <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
-            <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
-          </svg>
-          <h2 className="text-sm font-display font-semibold text-text-primary">Henrik API Key</h2>
-        </div>
-        <p className="text-xs font-body text-text-muted">
-          Resolving MMR and ranked info for players.
-        </p>
-        <input
-          type="password"
-          value={henrikApiKey}
-          onChange={(e) => onHenrikApiKeyChange(e.target.value)}
-          placeholder="HDEV-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-          className="w-full px-3 py-2 bg-base-600 border border-border rounded-lg text-xs font-body text-text-primary placeholder:text-text-muted/50 outline-none focus:border-val-red/60 transition-colors"
-        />
-        <button
-          onClick={() => open("https://api.henrikdev.xyz/dashboard/api-keys")}
-          className="inline-flex items-center gap-1 text-xs font-body text-val-red hover:text-val-red/80 transition-colors"
-        >
-          Get free API key
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" />
-          </svg>
-        </button>
-      </motion.div>
-
       <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
         <h2 className="text-sm font-display font-semibold text-text-primary">Timing</h2>
         <DelaySlider label="Select Delay" desc="Delay before selecting agent" value={selectDelay} onChange={onSelectDelayChange} />
         <DelaySlider label="Lock Delay" desc="Delay between select and lock" value={lockDelay} onChange={onLockDelayChange} />
       </motion.div>
 
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted">
+              <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 01-3.46 0" />
+            </svg>
+            <h2 className="text-sm font-display font-semibold text-text-primary">Notifications</h2>
+          </div>
+          <Toggle enabled={notificationsEnabled} onChange={onNotificationsEnabledChange} />
+        </div>
+        {notificationsEnabled && (
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <p className="text-xs font-body text-text-muted">Position on screen</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  { value: "top-left", label: "Top Left" },
+                  { value: "top-right", label: "Top Right" },
+                  { value: "bottom-left", label: "Bottom Left" },
+                  { value: "bottom-right", label: "Bottom Right" },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => onNotificationPositionChange(opt.value)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-body transition-colors ${
+                      notificationPosition === opt.value
+                        ? "bg-val-red/20 border border-val-red/40 text-val-red font-semibold"
+                        : "bg-base-600 border border-border text-text-secondary hover:text-text-primary hover:bg-base-500"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <DodgeKeybindSetting />
+          </div>
+        )}
+      </motion.div>
+
+      {/* Overlay section hidden — code kept in Overlay.jsx & OverlayWindow.jsx
       <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="rounded-xl bg-base-700 border border-border divide-y divide-border">
+        <div className="px-4 pt-3 pb-1">
+          <h2 className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider">Overlay</h2>
+        </div>
+        <div className="flex items-center justify-between p-4">
+          <div>
+            <p className="text-sm font-display font-medium text-text-primary">Valorant Thing Overlay</p>
+            <p className="text-xs font-body text-text-muted mt-0.5">Show match info overlay in-game</p>
+          </div>
+          <Toggle enabled={overlayEnabled} onChange={onOverlayEnabledChange} />
+        </div>
+        {overlayEnabled && (
+          <div className="px-4 py-3 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-display font-medium text-text-primary">Linger Time</p>
+              <p className="text-xs font-body text-text-muted mt-0.5">How long overlay stays after agent select (0 = instant hide)</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input type="range" min={0} max={30} step={5} value={overlayLinger} onChange={(e) => onOverlayLingerChange(parseInt(e.target.value, 10))} className="w-24 accent-val-red" />
+              <span className="text-xs font-display font-bold text-text-primary w-8 text-right tabular-nums">{overlayLinger}s</span>
+            </div>
+          </div>
+        )}
+      </motion.div>
+      */}
+
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="rounded-xl bg-base-700 border border-border divide-y divide-border">
+        <div className="px-4 pt-3 pb-1">
+          <h2 className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider">Startup</h2>
+        </div>
         <div className="flex items-center justify-between p-4">
           <div>
             <p className="text-sm font-display font-medium text-text-primary">Start with Windows</p>
@@ -378,12 +469,18 @@ export default function SettingsPage({
           </div>
           <Toggle enabled={minimizeToTray} onChange={onMinimizeToTrayChange} />
         </div>
+      </motion.div>
+
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="rounded-xl bg-base-700 border border-border divide-y divide-border">
+        <div className="px-4 pt-3 pb-1">
+          <h2 className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider">Misc</h2>
+        </div>
         <div className="flex items-center justify-between p-4">
           <div>
-            <p className="text-sm font-display font-medium text-text-primary">Show Logs</p>
-            <p className="text-xs font-body text-text-muted mt-0.5">Show API polling logs in a separate tab</p>
+            <p className="text-sm font-display font-medium text-text-primary">Discord Rich Presence</p>
+            <p className="text-xs font-body text-text-muted mt-0.5">Show current status on your Discord profile</p>
           </div>
-          <Toggle enabled={showLogs} onChange={onShowLogsChange} />
+          <Toggle enabled={discordRpc} onChange={onDiscordRpcChange} />
         </div>
         <div className="flex items-center justify-between p-4">
           <div>
@@ -398,6 +495,19 @@ export default function SettingsPage({
             <p className="text-xs font-body text-text-muted mt-0.5">Turn off all UI transitions and animations</p>
           </div>
           <Toggle enabled={disableAnimations} onChange={onDisableAnimationsChange} />
+        </div>
+      </motion.div>
+
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="rounded-xl bg-base-700 border border-border divide-y divide-border">
+        <div className="px-4 pt-3 pb-1">
+          <h2 className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider">Debug</h2>
+        </div>
+        <div className="flex items-center justify-between p-4">
+          <div>
+            <p className="text-sm font-display font-medium text-text-primary">Show Logs</p>
+            <p className="text-xs font-body text-text-muted mt-0.5">Show API polling logs in a separate tab</p>
+          </div>
+          <Toggle enabled={showLogs} onChange={onShowLogsChange} />
         </div>
         <div className="flex items-center justify-between p-4">
           <div>
@@ -571,17 +681,6 @@ export default function SettingsPage({
             <p className="text-xs font-body text-text-muted mt-0.5">Flat colors instead of gradient background</p>
           </div>
           <Toggle enabled={simplifiedTheme} onChange={onSimplifiedThemeChange} />
-        </div>
-      </motion.div>
-
-      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
-        <h2 className="text-sm font-display font-semibold text-text-primary">Integrations</h2>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-display font-medium text-text-primary">Discord Rich Presence</p>
-            <p className="text-xs font-body text-text-muted mt-0.5">Show current status on your Discord profile</p>
-          </div>
-          <Toggle enabled={discordRpc} onChange={onDiscordRpcChange} />
         </div>
       </motion.div>
 

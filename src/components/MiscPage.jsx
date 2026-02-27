@@ -6,7 +6,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { appDataDir } from "@tauri-apps/api/path";
 
 const MENU_VIDEO_SUBPATH = "ShooterGame\\Content\\Movies\\Menu";
-const MENU_VIDEO_NAME = "12_00_Homescreen_VCT.mp4";
+const MENU_VIDEO_NAME = "12_03_Homescreen.mp4";
 const noAnim = () => localStorage.getItem("disable_animations") === "true";
 const T0 = { duration: 0 };
 
@@ -26,6 +26,64 @@ export default function MiscPage({ connected, autoUnqueue, onAutoUnqueueChange, 
   useEffect(() => {
     invoke("find_valorant_path").then(setValorantPath).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!videoConfig || !valorantPath) return;
+    const destPath = `${valorantPath}\\${MENU_VIDEO_SUBPATH}\\${MENU_VIDEO_NAME}`;
+    const backupDir = videoConfig.backupPath?.replace(/[^\\\/]+$/, "") || "";
+
+    const needsMigrate = videoConfig.destPath && videoConfig.destPath !== destPath;
+    const needsVerify = !needsMigrate && videoConfig.hash;
+
+    const sync = async () => {
+      try {
+        const bDir = backupDir || await appDataDir();
+        const backupPath = `${bDir}menu_video_backup.mp4`;
+        const originalPath = `${bDir}menu_video_original.mp4`;
+
+        if (needsMigrate) {
+          setVideoStatus("Migrating video to new game version...");
+          const hasBackup = await invoke("compute_file_hash", { path: backupPath }).then(() => true).catch(() => false);
+          if (!hasBackup) {
+            localStorage.removeItem("menu_video_config");
+            setVideoConfig(null);
+            setVideoStatus("Custom video backup missing — config cleared.");
+            return;
+          }
+          await invoke("force_copy_file", { source: destPath, dest: originalPath }).catch(() => {});
+          await invoke("force_copy_file", { source: backupPath, dest: destPath });
+          if (videoConfig.destPath !== destPath) {
+            await invoke("remove_file", { path: videoConfig.destPath }).catch(() => {});
+          }
+          if (videoConfig.originalPath && videoConfig.originalPath !== originalPath) {
+            await invoke("remove_file", { path: videoConfig.originalPath }).catch(() => {});
+          }
+          const hash = await invoke("compute_file_hash", { path: destPath }).catch(() => "");
+          const cfg = { destPath, backupPath, originalPath, hash };
+          localStorage.setItem("menu_video_config", JSON.stringify(cfg));
+          setVideoConfig(cfg);
+          setVideoStatus("Video migrated to new game version!");
+          return;
+        }
+
+        if (needsVerify) {
+          const currentHash = await invoke("compute_file_hash", { path: destPath }).catch(() => "");
+          if (currentHash && currentHash !== videoConfig.hash) {
+            const hasBackup = await invoke("compute_file_hash", { path: backupPath }).then(() => true).catch(() => false);
+            if (hasBackup) {
+              await invoke("force_copy_file", { source: destPath, dest: originalPath }).catch(() => {});
+              await invoke("force_copy_file", { source: backupPath, dest: destPath });
+              const hash = await invoke("compute_file_hash", { path: destPath }).catch(() => "");
+              const cfg = { ...videoConfig, destPath, originalPath, hash };
+              localStorage.setItem("menu_video_config", JSON.stringify(cfg));
+              setVideoConfig(cfg);
+            }
+          }
+        }
+      } catch {}
+    };
+    sync();
+  }, [videoConfig?.destPath, videoConfig?.hash, valorantPath]);
 
   useEffect(() => {
     if (videoConfig?.backupPath) {
@@ -92,6 +150,16 @@ export default function MiscPage({ connected, autoUnqueue, onAutoUnqueueChange, 
       await invoke("force_copy_file", { source: selected, dest: backupPath });
       const hash = await invoke("compute_file_hash", { path: destPath });
 
+      if (videoConfig?.originalPath && videoConfig.originalPath !== originalPath) {
+        await invoke("remove_file", { path: videoConfig.originalPath }).catch(() => {});
+      }
+      if (videoConfig?.backupPath && videoConfig.backupPath !== backupPath) {
+        await invoke("remove_file", { path: videoConfig.backupPath }).catch(() => {});
+      }
+      if (videoConfig?.destPath && videoConfig.destPath !== destPath) {
+        await invoke("remove_file", { path: videoConfig.destPath }).catch(() => {});
+      }
+
       const cfg = { destPath, backupPath, originalPath: videoConfig?.originalPath || originalPath, hash };
       localStorage.setItem("menu_video_config", JSON.stringify(cfg));
       setVideoConfig(cfg);
@@ -107,8 +175,13 @@ export default function MiscPage({ connected, autoUnqueue, onAutoUnqueueChange, 
   const handleResetMenuVideo = async () => {
     try {
       if (videoConfig?.originalPath && videoConfig?.destPath) {
-        await invoke("force_copy_file", { source: videoConfig.originalPath, dest: videoConfig.destPath });
+        const hasOriginal = await invoke("compute_file_hash", { path: videoConfig.originalPath }).then(() => true).catch(() => false);
+        if (hasOriginal) {
+          await invoke("force_copy_file", { source: videoConfig.originalPath, dest: videoConfig.destPath });
+        }
       }
+      if (videoConfig?.backupPath) await invoke("remove_file", { path: videoConfig.backupPath }).catch(() => {});
+      if (videoConfig?.originalPath) await invoke("remove_file", { path: videoConfig.originalPath }).catch(() => {});
       localStorage.removeItem("menu_video_config");
       setVideoConfig(null);
       setVideoStatus("Original video restored.");

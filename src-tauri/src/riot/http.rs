@@ -155,26 +155,6 @@ pub fn splooshima_api_post(path: &str, body: &str, api_key: &str) -> Result<Stri
     Ok(resp_body)
 }
 
-pub fn henrik_api_get(path: &str, api_key: &str) -> Result<String, String> {
-    let url = format!("https://api.henrikdev.xyz{}", path);
-    let script = format!(
-        r#"const https=require('https');const u=new URL('{}');const r=https.request({{hostname:u.hostname,path:u.pathname,headers:{{'Authorization':'{}'}}}},res=>{{let d='';res.on('data',c=>d+=c);res.on('end',()=>process.stdout.write(d))}});r.on('error',e=>{{process.stderr.write(e.message);process.exit(1)}});r.setTimeout(10000,()=>{{r.destroy();process.stderr.write('timeout');process.exit(1)}});r.end()"#,
-        url, api_key
-    );
-
-    let mut cmd = Command::new("node");
-    cmd.args(["-e", &script]);
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(0x08000000);
-    let output = cmd.output().map_err(|e| format!("node failed: {}", e))?;
-
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
-}
-
 const PLATFORM: &str = "ew0KCSJwbGF0Zm9ybVR5cGUiOiAiUEMiLA0KCSJwbGF0Zm9ybU9TIjogIldpbmRvd3MiLA0KCSJwbGF0Zm9ybU9TVmVyc2lvbiI6ICIxMC4wLjE5MDQyLjEuMjU2LjY0Yml0IiwNCgkicGxhdGZvcm1DaGlwc2V0IjogIlVua25vd24iDQp9";
 
 pub fn pd_get(shard: &str, path: &str, access_token: &str, entitlements: &str, client_version: &str) -> Result<String, String> {

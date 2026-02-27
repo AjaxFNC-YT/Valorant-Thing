@@ -573,7 +573,7 @@ Pages use `AnimatePresence mode="wait"` for tab transitions. Each page is wrappe
 - **Menu Video Customization**: Replace Valorant's main menu background video.
   - Auto-detects Valorant install path via `find_valorant_path`.
   - Backs up original video before first replacement.
-  - Copies selected video to game directory (`ShooterGame\Content\Movies\Menu\12_00_Homescreen_VCT.mp4`).
+  - Copies selected video to game directory (`ShooterGame\Content\Movies\Menu\12_03_Homescreen.mp4`).
   - Computes file hash for auto-restore (health check re-copies if game reverts).
   - Video preview using Tauri's `convertFileSrc` + asset protocol.
   - Config in `localStorage` key `menu_video_config`.

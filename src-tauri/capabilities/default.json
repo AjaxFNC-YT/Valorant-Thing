@@ -2,7 +2,9 @@
   "identifier": "default",
   "description": "Default capabilities for the main window",
   "windows": [
-    "main"
+    "main",
+    "overlay",
+    "notification-overlay"
   ],
   "permissions": [
     "core:default",
@@ -13,6 +15,19 @@
     "core:window:allow-set-focus",
     "core:window:allow-show",
     "core:window:allow-hide",
+    "core:window:allow-destroy",
+    "core:window:allow-create",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-set-skip-taskbar",
+    "core:window:allow-set-decorations",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:window:allow-set-focus",
+    "core:event:default",
+    "core:event:allow-emit",
+    "core:event:allow-emit-to",
+    "core:event:allow-listen",
+    "core:webview:allow-create-webview-window",
     "autostart:allow-enable",
     "autostart:allow-disable",
     "autostart:allow-is-enabled",
@@ -23,6 +38,9 @@
     "fs:allow-write-text-file",
     "fs:allow-exists",
     "fs:allow-copy-file",
-    "fs:allow-remove"
+    "fs:allow-remove",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "global-shortcut:allow-is-registered"
   ]
 }

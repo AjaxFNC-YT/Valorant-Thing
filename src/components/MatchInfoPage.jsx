@@ -9,10 +9,8 @@ const T0 = { duration: 0 };
 const COMP_TIERS_URL = "https://valorant-api.com/v1/competitivetiers";
 const MAPS_URL = "https://valorant-api.com/v1/maps";
 const POLL_INTERVAL = 2000;
-const HENRIK_RATE_WAIT = 3000;
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export default function MatchInfoPage({ henrikApiKey, splooshimaApiKey, splooshimaAvailable, player: selfPlayer, connected, addLog }) {
+export default function MatchInfoPage({ splooshimaApiKey, splooshimaAvailable, player: selfPlayer, connected, addLog }) {
   const myPuuid = selfPlayer?.puuid;
   const [players, setPlayers] = useState([]);
   const [agents, setAgents] = useState({});
@@ -157,95 +155,69 @@ export default function MatchInfoPage({ henrikApiKey, splooshimaApiKey, splooshi
       if (needsAccount.length > 0) {
         const puuidsToResolve = needsAccount.map((p) => p.puuid);
         const resolved = {};
-        let unresolvedPuuids = [...puuidsToResolve];
 
-        if (splooshimaApiKey && splooshimaAvailable) {
-          try {
-            const sRaw = await invoke("splooshima_lookup", { puuids: unresolvedPuuids, apiKey: splooshimaApiKey });
-            if (cancelledRef.current) return;
-            const sData = JSON.parse(sRaw);
-            addLog?.("info", `[Splooshima] Bulk lookup — ${sData.found ?? 0}/${sData.requested ?? 0} resolved`, sData);
-            (sData?.results || []).forEach((r) => {
-              const entry = { name: r.gameName, tag: r.tagLine, account_level: r.level != null ? r.level : null };
-              resolved[r.puuid] = entry;
-              setCache(r.puuid, "account", entry);
-              if (r.currentTier != null) {
-                const mmrEntry = {
-                  currenttier: r.currentTier || 0,
-                  ranking_in_tier: r.currentRR || 0,
-                  peaktier: r.peakTier || 0,
-                  peak_rr: r.peakRR || 0,
-                };
-                setCache(r.puuid, "mmr", mmrEntry);
-              }
-            });
-            unresolvedPuuids = unresolvedPuuids.filter((id) => !resolved[id]);
-          } catch (e) {
-            addLog?.("error", `[Splooshima] Lookup failed — falling back`, { error: String(e) });
-          }
+        try {
+          const raw = await invoke("resolve_player_names", { puuids: puuidsToResolve });
+          if (cancelledRef.current) return;
+          const names = JSON.parse(raw);
+          addLog?.("info", `[Riot] Name-service resolved ${names.filter(n => n.name).length}/${puuidsToResolve.length} players`);
+          names.forEach((n) => {
+            if (n.name) {
+              resolved[n.puuid] = { name: n.name, tag: n.tag };
+              setCache(n.puuid, "account", resolved[n.puuid]);
+            }
+          });
+        } catch (e) {
+          addLog?.("error", `[Riot] Name-service failed`, { error: String(e) });
         }
 
-        const henrikAccountFetch = async (puuid) => {
-          try {
-            const r = await invoke("henrik_get_account", { puuid, apiKey: henrikApiKey });
-            const j = JSON.parse(r);
-            if (j.status === 429) {
-              addLog?.("info", `[Henrik] Account rate-limited for ${puuid.slice(0, 8)}… — retrying`, j);
-              await sleep(HENRIK_RATE_WAIT);
-              const retry = await invoke("henrik_get_account", { puuid, apiKey: henrikApiKey });
-              const rj = JSON.parse(retry);
-              addLog?.("info", `[Henrik] Account retry for ${puuid.slice(0, 8)}…`, rj);
-              return rj.data ? { puuid, name: rj.data.name, tag: rj.data.tag, account_level: rj.data.account_level } : null;
+        const needLevel = needsAccount.filter((p) =>
+          (p.hideLevel || p.accountLevel === 0) && resolved[p.puuid]
+        );
+        if (needLevel.length > 0) {
+          addLog?.("info", `[Riot] Fetching levels from match history for ${needLevel.length} hidden-level players`);
+          const levelResults = await Promise.all(needLevel.map(async (p) => {
+            try {
+              const raw = await invoke("get_player_level_from_history", { targetPuuid: p.puuid });
+              const data = JSON.parse(raw);
+              addLog?.("info", `[Riot] History level for ${p.puuid.slice(0, 8)}… = ${data.level}`);
+              return { puuid: p.puuid, level: data.level || 0 };
+            } catch (e) {
+              addLog?.("error", `[Riot] History level failed for ${p.puuid.slice(0, 8)}…`, { error: String(e) });
+              return { puuid: p.puuid, level: 0 };
             }
-            addLog?.("info", `[Henrik] Account resolved for ${puuid.slice(0, 8)}…`, j);
-            return j.data ? { puuid, name: j.data.name, tag: j.data.tag, account_level: j.data.account_level } : null;
-          } catch (e) {
-            addLog?.("error", `[Henrik] Account lookup failed for ${puuid.slice(0, 8)}…`, { error: String(e) });
-            return null;
-          }
-        };
-
-        if (unresolvedPuuids.length > 0 && henrikApiKey) {
-          const results = await Promise.all(unresolvedPuuids.map(henrikAccountFetch));
+          }));
           if (cancelledRef.current) return;
-          results.forEach((r) => {
-            if (r) {
-              resolved[r.puuid] = { name: r.name, tag: r.tag, account_level: r.account_level };
+          levelResults.forEach((r) => {
+            if (r.level > 0 && resolved[r.puuid]) {
+              resolved[r.puuid] = { ...resolved[r.puuid], account_level: r.level };
               setCache(r.puuid, "account", resolved[r.puuid]);
             }
           });
-          unresolvedPuuids = unresolvedPuuids.filter((id) => !resolved[id]);
         }
 
-        if (henrikApiKey) {
-          const needLevel = needsAccount.filter((p) =>
-            resolved[p.puuid] && resolved[p.puuid].account_level == null && (p.hideLevel || p.accountLevel === 0)
-          );
-          if (needLevel.length > 0) {
-            addLog?.("info", `[Henrik] Fetching levels for ${needLevel.length} players with null Splooshima level`);
-            const results = await Promise.all(needLevel.map((p) => henrikAccountFetch(p.puuid)));
+        let unresolvedNames = puuidsToResolve.filter((id) => !resolved[id]);
+        let stillNeedLevel = needLevel.filter((p) => !resolved[p.puuid]?.account_level);
+        if ((unresolvedNames.length > 0 || stillNeedLevel.length > 0) && splooshimaApiKey && splooshimaAvailable) {
+          try {
+            const sPuuids = [...new Set([...unresolvedNames, ...stillNeedLevel.map(p => p.puuid)])];
+            const sRaw = await invoke("splooshima_lookup", { puuids: sPuuids, apiKey: splooshimaApiKey });
             if (cancelledRef.current) return;
-            results.forEach((r) => {
-              if (r?.account_level) {
-                resolved[r.puuid] = { ...resolved[r.puuid], account_level: r.account_level };
+            const sData = JSON.parse(sRaw);
+            addLog?.("info", `[Splooshima] Fallback resolved ${sData.found ?? 0}/${sData.requested ?? 0} players`);
+            (sData?.results || []).forEach((r) => {
+              const entry = { name: r.gameName || resolved[r.puuid]?.name, tag: r.tagLine || resolved[r.puuid]?.tag, account_level: r.level ?? resolved[r.puuid]?.account_level ?? null };
+              if (entry.name) {
+                resolved[r.puuid] = { ...resolved[r.puuid], ...entry };
                 setCache(r.puuid, "account", resolved[r.puuid]);
               }
-            });
-          }
-        }
-
-        if (unresolvedPuuids.length > 0) {
-          try {
-            const raw = await invoke("resolve_player_names", { puuids: unresolvedPuuids });
-            if (cancelledRef.current) return;
-            const names = JSON.parse(raw);
-            names.forEach((n) => {
-              if (n.name) {
-                resolved[n.puuid] = n;
-                setCache(n.puuid, "account", n);
+              if (r.currentTier != null) {
+                setCache(r.puuid, "mmr", { currenttier: r.currentTier || 0, ranking_in_tier: r.currentRR || 0, peaktier: r.peakTier || 0, peak_rr: r.peakRR || 0 });
               }
             });
-          } catch {}
+          } catch (e) {
+            addLog?.("error", `[Splooshima] Fallback lookup failed`, { error: String(e) });
+          }
         }
 
         setPlayers((prev) => prev.map((p) => {
@@ -259,16 +231,31 @@ export default function MatchInfoPage({ henrikApiKey, splooshimaApiKey, splooshi
       const needsMmr = withCached.filter((p) => !getCached(p.puuid, "mmr"));
       if (needsMmr.length === 0) return;
 
+      const extractPeak = (rawJson) => {
+        try {
+          const seasons = rawJson?.QueueSkills?.competitive?.SeasonalInfoBySeasonID;
+          if (!seasons) return { peaktier: 0, peak_rr: 0 };
+          let best = 0, bestRr = 0;
+          Object.values(seasons).forEach(s => {
+            const t = s.CompetitiveTier || 0;
+            const r = s.RankedRating || 0;
+            if (t > best || (t === best && r > bestRr)) { best = t; bestRr = r; }
+          });
+          return { peaktier: best, peak_rr: bestRr };
+        } catch { return { peaktier: 0, peak_rr: 0 }; }
+      };
+
       const fetchMmr = (puuid) =>
         invoke("get_player_mmr", { targetPuuid: puuid })
           .then((raw) => {
             const json = JSON.parse(raw);
             const tier = json.currenttier || 0;
             const rr = json.ranking_in_tier || 0;
-            if (tier === 0 && rr === 0) return { puuid, data: null, needsHenrik: true };
-            return { puuid, data: { currenttier: tier, ranking_in_tier: rr } };
+            if (tier === 0 && rr === 0) return { puuid, data: null, needsFallback: true };
+            const peak = extractPeak(json.raw);
+            return { puuid, data: { currenttier: tier, ranking_in_tier: rr, ...peak } };
           })
-          .catch(() => ({ puuid, data: null, needsHenrik: true }));
+          .catch(() => ({ puuid, data: null, needsFallback: true }));
 
       let mmrResults = await Promise.all(needsMmr.map((p) => fetchMmr(p.puuid)));
       if (cancelledRef.current) return;
@@ -279,45 +266,33 @@ export default function MatchInfoPage({ henrikApiKey, splooshimaApiKey, splooshi
         return r?.data ? { ...p, mmr: r.data } : p;
       }));
 
-      const mmrFailed = mmrResults.filter((r) => r.needsHenrik).map((r) => r.puuid);
-      if (mmrFailed.length > 0 && henrikApiKey) {
-        const henrikMmrFetch = async (puuid) => {
-          try {
-            const r = await invoke("henrik_get_mmr", { puuid, region: "na", apiKey: henrikApiKey });
-            const j = JSON.parse(r);
-            if (j.status === 429) {
-              addLog?.("info", `[Henrik] MMR rate-limited for ${puuid.slice(0, 8)}… — retrying`, j);
-              await sleep(HENRIK_RATE_WAIT);
-              const retry = await invoke("henrik_get_mmr", { puuid, region: "na", apiKey: henrikApiKey });
-              const rj = JSON.parse(retry);
-              addLog?.("info", `[Henrik] MMR retry for ${puuid.slice(0, 8)}…`, rj);
-              const tier = rj.data?.current_data?.currenttier ?? rj.data?.currenttier ?? 0;
-              const rr = rj.data?.current_data?.ranking_in_tier ?? rj.data?.ranking_in_tier ?? 0;
-              return tier > 0 ? { puuid, currenttier: tier, ranking_in_tier: rr } : null;
+      let mmrFailed = mmrResults.filter((r) => r.needsFallback).map((r) => r.puuid);
+
+      if (mmrFailed.length > 0 && splooshimaApiKey && splooshimaAvailable) {
+        try {
+          const sRaw = await invoke("splooshima_lookup", { puuids: mmrFailed, apiKey: splooshimaApiKey });
+          if (cancelledRef.current) return;
+          const sData = JSON.parse(sRaw);
+          addLog?.("info", `[Splooshima] MMR bulk lookup — ${sData.found ?? 0}/${sData.requested ?? 0} resolved`, sData);
+          const smmrMap = {};
+          (sData?.results || []).forEach((r) => {
+            if (r.currentTier != null && r.currentTier > 0) {
+              smmrMap[r.puuid] = {
+                currenttier: r.currentTier || 0,
+                ranking_in_tier: r.currentRR || 0,
+                peaktier: r.peakTier || 0,
+                peak_rr: r.peakRR || 0,
+              };
+              setCache(r.puuid, "mmr", smmrMap[r.puuid]);
             }
-            addLog?.("info", `[Henrik] MMR resolved for ${puuid.slice(0, 8)}…`, j);
-            if (j.data) {
-              const tier = j.data?.current_data?.currenttier ?? j.data?.currenttier ?? 0;
-              const rr = j.data?.current_data?.ranking_in_tier ?? j.data?.ranking_in_tier ?? 0;
-              return tier > 0 ? { puuid, currenttier: tier, ranking_in_tier: rr } : null;
-            }
-            return null;
-          } catch (e) {
-            addLog?.("error", `[Henrik] MMR lookup failed for ${puuid.slice(0, 8)}…`, { error: String(e) });
-            return null;
-          }
-        };
-        const hResults = await Promise.all(mmrFailed.map(henrikMmrFetch));
-        if (cancelledRef.current) return;
-        const mmrMap = {};
-        hResults.forEach((r) => {
-          if (r) {
-            mmrMap[r.puuid] = { currenttier: r.currenttier, ranking_in_tier: r.ranking_in_tier };
-            setCache(r.puuid, "mmr", mmrMap[r.puuid]);
-          }
-        });
-        setPlayers((prev) => prev.map((p) => mmrMap[p.puuid] ? { ...p, mmr: mmrMap[p.puuid] } : p));
+          });
+          setPlayers((prev) => prev.map((p) => smmrMap[p.puuid] ? { ...p, mmr: smmrMap[p.puuid] } : p));
+          mmrFailed = mmrFailed.filter((id) => !smmrMap[id]);
+        } catch (e) {
+          addLog?.("error", `[Splooshima] MMR lookup failed`, { error: String(e) });
+        }
       }
+
     } catch (err) {
       const msg = typeof err === "string" ? err : err?.message || "";
       if (msg.includes("Not in a match")) {

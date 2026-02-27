@@ -12,7 +12,8 @@ const QUEUES = [
   { id: "swiftplay", label: "Swiftplay" },
   { id: "deathmatch", label: "Deathmatch" },
   { id: "hurm", label: "Team Deathmatch" },
-  { id: "skirmish", label: "Skirmish (LTM)" },
+  { id: "skirmish2v2", label: "Skirmish 2v2 (LTM)" },
+  { id: "ggteam", label: "Escalation" },
   { id: "spikerush", label: "Spike Rush" },
   { id: "premier", label: "Premier" },
 ];

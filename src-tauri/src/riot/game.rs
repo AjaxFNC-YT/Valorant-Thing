@@ -953,6 +953,36 @@ pub fn send_chat_message(state: &Mutex<ConnectionState>, cid: &str, message: &st
     Err(format!("Chat send failed: all CID formats tried for {}", cid))
 }
 
+pub fn get_player_level_from_history(state: &Mutex<ConnectionState>, target_puuid: &str) -> Result<String, String> {
+    let (access_token, entitlements, _, _, shard, client_version) = get_glz_creds(state)?;
+    let history_path = format!("/match-history/v1/history/{}?startIndex=0&endIndex=5", target_puuid);
+    let history_raw = pd_get(&shard, &history_path, &access_token, &entitlements, &client_version)?;
+    let history: serde_json::Value = serde_json::from_str(&history_raw).map_err(|e| format!("parse history: {}", e))?;
+
+    let matches = history["History"].as_array().ok_or("No History array")?;
+    if matches.is_empty() {
+        return Ok(serde_json::json!({"level": 0}).to_string());
+    }
+
+    let match_id = matches[0]["MatchID"].as_str().ok_or("No MatchID")?;
+    let detail_path = format!("/match-details/v1/matches/{}", match_id);
+    let detail_raw = pd_get(&shard, &detail_path, &access_token, &entitlements, &client_version)?;
+    let detail: serde_json::Value = serde_json::from_str(&detail_raw).map_err(|e| format!("parse detail: {}", e))?;
+
+    let mut level: u64 = 0;
+    if let Some(players) = detail["players"].as_array() {
+        for p in players {
+            if p["subject"].as_str() == Some(target_puuid) {
+                level = p["accountLevel"].as_u64().unwrap_or(0);
+                break;
+            }
+        }
+    }
+
+    log_info(&format!("[History] Level for {} = {} (from match {})", &target_puuid[..8.min(target_puuid.len())], level, match_id));
+    Ok(serde_json::json!({"level": level, "matchId": match_id}).to_string())
+}
+
 pub fn get_chat_participants(state: &Mutex<ConnectionState>, cid: &str) -> Result<String, String> {
     let (port, auth) = get_local_creds(state)?;
     let encoded_cid = cid.replace("@", "%40");

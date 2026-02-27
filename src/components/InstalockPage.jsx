@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
 
-const EXCLUDED_MAPS = ["The Range", "District", "Kasbah", "Drift", "Glitch", "Piazza", "Basic Training", "Skirmish A", "Skirmish B", "Skirmish C"];
+const EXCLUDED_MAPS = ["The Range", "Basic Training", "Skirmish A", "Skirmish B", "Skirmish C"];
 const noAnim = () => localStorage.getItem("disable_animations") === "true";
 const T0 = { duration: 0 };
 

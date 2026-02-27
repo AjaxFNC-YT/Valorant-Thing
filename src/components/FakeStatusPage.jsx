@@ -29,7 +29,10 @@ const QUEUES = [
   { id: "hurm", label: "Team Deathmatch" }, 
   { id: "premier", label: "Premier" },
   { id: "ggteam", label: "Escalation" },
-  { id: "skirmish", label: "Skirmish" },
+  { id: "skirmish2v2", label: "Skirmish 2v2" },
+  { id: "onefa", label: "Replication" },
+  { id: "snowball", label: "Snowball Fight" },
+  { id: "custom", label: "Custom Game" },
 ];
 
 const PREMIER_DIVISIONS = [

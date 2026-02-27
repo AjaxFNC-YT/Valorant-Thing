@@ -16,8 +16,24 @@ import PartyPage from "./components/PartyPage";
 import MiscPage from "./components/MiscPage";
 import FakeStatusPage from "./components/FakeStatusPage";
 import ChatPage from "./components/ChatPage";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { emitTo } from "@tauri-apps/api/event";
+import { register, unregister, isRegistered } from "@tauri-apps/plugin-global-shortcut";
 import HomePage from "./components/HomePage";
+// import Overlay from "./components/Overlay";
 import { getCached, setCache } from "./matchCache";
+
+function parseGamePod(podId) {
+  if (!podId) return "";
+  const parts = podId.split("-");
+  const gpIdx = parts.indexOf("gp");
+  if (gpIdx >= 0 && gpIdx + 1 < parts.length) {
+    const region = parts.slice(0, gpIdx).find(p => ["na", "eu", "ap", "kr", "br", "latam"].includes(p))?.toUpperCase() || "";
+    const city = parts[gpIdx + 1].charAt(0).toUpperCase() + parts[gpIdx + 1].slice(1).replace(/\d+$/, "");
+    return region ? `${region} - ${city}` : city;
+  }
+  return podId.split(".").pop()?.split("-").slice(0, 2).join(" ") || podId;
+}
 
 const CUSTOM_VARS = ['--base-900','--base-800','--base-700','--base-600','--base-500','--base-400','--border','--border-light','--val-red','--val-red-dark','--accent-blue','--accent-blue-dark'];
 
@@ -140,7 +156,7 @@ export default function App() {
       return cfg?.active || false;
     } catch { return false; }
   });
-  const [henrikApiKey, setHenrikApiKey] = useState(() => localStorage.getItem("henrik_api_key") || "");
+  localStorage.removeItem("henrik_api_key");
   const [splooshimaApiKey, setSplooshimaApiKey] = useState(() => localStorage.getItem("splooshima_api_key") || "");
   const [splooshimaAvailable, setSplooshimaAvailable] = useState(true);
   const [mapDodgeActive, setMapDodgeActive] = useState(() => {
@@ -149,6 +165,8 @@ export default function App() {
       return cfg?.active || false;
     } catch { return false; }
   });
+  const [notificationsEnabled, setNotificationsEnabled] = useState(() => localStorage.getItem("notifications_enabled") !== "false");
+  const [notificationPosition, setNotificationPosition] = useState(() => localStorage.getItem("notification_position") || "top-right");
   const [pregameMatchId, setPregameMatchId] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [autoUnqueue, setAutoUnqueue] = useState(() => localStorage.getItem("auto_unqueue") === "true");
@@ -161,6 +179,14 @@ export default function App() {
     const saved = localStorage.getItem("instalock_lock_delay");
     return saved ? parseInt(saved, 10) : 500;
   });
+  // const [overlayEnabled, setOverlayEnabled] = useState(() => localStorage.getItem("overlay_enabled") !== "false");
+  // const [overlayLinger, setOverlayLinger] = useState(() => {
+  //   const saved = localStorage.getItem("overlay_linger");
+  //   return saved != null ? parseInt(saved, 10) : 20;
+  // });
+  const notifWindowRef = useRef(null);
+  const mapLookupRef = useRef({});
+  const notifiedMatchRef = useRef(null);
   const connectingRef = useRef(false);
   const instalockConfigRef = useRef({ maps: [], selectedAgent: null, perMapSelections: {} });
   const lockedMatchRef = useRef(null);
@@ -185,13 +211,19 @@ export default function App() {
   const prefetchedMatchRef = useRef(null);
   const splooshimaApiKeyRef = useRef(splooshimaApiKey);
   const splooshimaAvailableRef = useRef(splooshimaAvailable);
-  const henrikApiKeyRef = useRef(henrikApiKey);
+  const pendingNotifsRef = useRef([]);
+  const overlayReadyRef = useRef(false);
+  const creatingWindowRef = useRef(false);
 
   useEffect(() => {
-    const cfg = (() => { try { return JSON.parse(localStorage.getItem("instalock-config")); } catch { return null; } })();
-    if (!cfg) return;
-    const EXCLUDED = ["The Range", "District", "Kasbah", "Drift", "Glitch", "Piazza", "Basic Training", "Skirmish A", "Skirmish B", "Skirmish C"];
+    const EXCLUDED = ["The Range", "Basic Training", "Skirmish A", "Skirmish B", "Skirmish C"];
     fetch("https://valorant-api.com/v1/maps").then(r => r.json()).then(res => {
+      const lookup = {};
+      (res.data || []).forEach(m => { if (m.mapUrl) lookup[m.mapUrl.toLowerCase()] = m; });
+      mapLookupRef.current = lookup;
+
+      const cfg = (() => { try { return JSON.parse(localStorage.getItem("instalock-config")); } catch { return null; } })();
+      if (!cfg) return;
       const maps = (res.data || []).filter(m => !EXCLUDED.includes(m.displayName));
       const perMap = {};
       if (cfg.perMap) {
@@ -344,7 +376,6 @@ export default function App() {
   }, [status, discordRpc, instalockActive, mapDodgeActive]);
 
   useEffect(() => { selectDelayRef.current = selectDelay; localStorage.setItem("instalock_select_delay", selectDelay); }, [selectDelay]);
-  useEffect(() => { localStorage.setItem("henrik_api_key", henrikApiKey); }, [henrikApiKey]);
   useEffect(() => { lockDelayRef.current = lockDelay; localStorage.setItem("instalock_lock_delay", lockDelay); }, [lockDelay]);
 
   useEffect(() => {
@@ -420,7 +451,7 @@ export default function App() {
           addLog("info", "[Splooshima] Health check passed — available this session");
         } catch (sErr) {
           setSplooshimaAvailable(false);
-          addLog("error", `[Splooshima] Health check failed — using Henrik fallback this session: ${sErr}`);
+          addLog("error", `[Splooshima] Health check failed — Splooshima unavailable this session: ${sErr}`);
         }
       }
     } catch (err) {
@@ -522,7 +553,11 @@ export default function App() {
   }, [status]);
 
   useEffect(() => {
-    if ((!instalockActive && !mapDodgeActive) || status !== "connected") return;
+    if ((!instalockActive && !mapDodgeActive && !notificationsEnabled) || status !== "connected") {
+      addLog("info", `[Notif] Poll skipped: instalock=${instalockActive}, dodge=${mapDodgeActive}, notif=${notificationsEnabled}, status=${status}`);
+      return;
+    }
+    addLog("info", `[Notif] Poll started (instalock=${instalockActive}, dodge=${mapDodgeActive}, notif=${notificationsEnabled})`);
     let cancelled = false;
 
     const logOnce = (key, type, message, data) => {
@@ -562,12 +597,44 @@ export default function App() {
           else if (modeUrl.includes("ggteam") || queueId === "ggteam") mode = "Escalation";
           else if (queueId === "premier") mode = "Premier";
           rpcMatchInfoRef.current = { allyScore, enemyScore, mode, isDeathmatch: mode === "Deathmatch" };
+
+          if (mode === "Deathmatch" && notifiedMatchRef.current !== matchId && localStorage.getItem("notifications_enabled") !== "false") {
+            notifiedMatchRef.current = matchId;
+            const mapData = mapLookupRef.current[match.MapID?.toLowerCase()] || null;
+            const podId = match.GamePodID || "";
+            addLog("info", `[Notif] Deathmatch detected — triggering match-found (match: ${matchId})`);
+            pushNotification({
+              id: `match-${matchId}`,
+              type: "match-found",
+              mapName: mapData?.displayName || "Unknown Map",
+              mapImage: mapData?.listViewIcon || mapData?.splash || null,
+              server: parseGamePod(podId),
+              canDodge: false,
+            });
+          }
         } else {
           rpcMatchInfoRef.current = null;
         }
 
         if (match._phase === "pregame") {
           setPregameMatchId(matchId);
+
+          if (notifiedMatchRef.current !== matchId && localStorage.getItem("notifications_enabled") !== "false") {
+            notifiedMatchRef.current = matchId;
+            const mapData = mapLookupRef.current[match.MapID?.toLowerCase()] || null;
+            const podId = match.GamePodID || "";
+            const dodgeKeybind = localStorage.getItem("dodge_keybind") || "Ctrl+D";
+            addLog("info", `[Notif] Pregame detected — triggering match-found (match: ${matchId}, map: ${mapData?.displayName || match.MapID})`);
+            pushNotification({
+              id: `match-${matchId}`,
+              type: "match-found",
+              mapName: mapData?.displayName || "Unknown Map",
+              mapImage: mapData?.listViewIcon || mapData?.splash || null,
+              server: parseGamePod(podId),
+              canDodge: true,
+              dodgeKeybind,
+            });
+          }
 
           if (mapDodgeActiveRef.current && dodgedMatchRef.current !== matchId) {
             const dodgeCfg = mapDodgeRef.current;
@@ -577,6 +644,8 @@ export default function App() {
               try {
                 await invoke("pregame_quit", { matchId });
                 addLog("match", "Auto-dodged blacklisted map!");
+                const dodgeMapData = mapLookupRef.current[match.MapID?.toLowerCase()];
+                pushNotification({ id: `dodge-${matchId}`, type: "dodged", reason: "map", mapName: dodgeMapData?.displayName || match.MapID });
                 setPregameMatchId(null);
                 lockedMatchRef.current = null;
               } catch (dodgeErr) {
@@ -602,6 +671,10 @@ export default function App() {
               lockedMatchRef.current = matchId;
               const sd = selectDelayRef.current;
               const ld = lockDelayRef.current;
+              const totalMs = sd + ld;
+              if (localStorage.getItem("notifications_enabled") !== "false") {
+                pushNotification({ id: `lock-${matchId}`, type: "locking", agentName: agent.displayName, totalMs, startTime: Date.now() });
+              }
               addLog("info", `Selecting ${agent.displayName} in ${sd}ms`);
               await new Promise((r) => setTimeout(r, sd));
               if (cancelled) return;
@@ -612,6 +685,9 @@ export default function App() {
               await invoke("lock_agent", { matchId, agentId: agent.uuid });
               lockedAgentNameRef.current = agent.displayName;
               addLog("match", `Locked ${agent.displayName}!`);
+              if (localStorage.getItem("notifications_enabled") !== "false") {
+                pushNotification({ id: `lock-${matchId}`, type: "locked", agentName: agent.displayName });
+              }
             } else {
               logOnce(`noagent:${matchId}`, "info", "No agent configured for this map");
             }
@@ -644,14 +720,14 @@ export default function App() {
             pendingUnqueueRef.current = false;
             addLog("info", "[Misc] Confirmed out-of-match — leaving queue");
             invoke("leave_queue")
-              .then(() => addLog("info", "[Misc] Successfully left queue after dodge"))
+              .then(() => { addLog("info", "[Misc] Successfully left queue after dodge"); pushNotification({ id: `queue-unqueue-${Date.now()}`, type: "queue", action: "unqueue" }); })
               .catch((e) => addLog("error", `[Misc] Failed to leave queue: ${e}`));
           }
           if (!prevPhase && pendingRequeueRef.current) {
             pendingRequeueRef.current = false;
             addLog("info", "[Misc] Confirmed out-of-match — requeuing");
             invoke("enter_queue")
-              .then(() => addLog("info", "[Misc] Successfully requeued after match"))
+              .then(() => { addLog("info", "[Misc] Successfully requeued after match"); pushNotification({ id: `queue-requeue-${Date.now()}`, type: "queue", action: "requeue" }); })
               .catch((e) => addLog("error", `[Misc] Failed to requeue: ${e}`));
           }
 
@@ -661,23 +737,156 @@ export default function App() {
           lockedAgentNameRef.current = null;
           rpcMatchInfoRef.current = null;
           dodgedMatchRef.current = null;
+          notifiedMatchRef.current = null;
         }
       }
       if (!cancelled) setTimeout(poll, MATCH_POLL_INTERVAL);
     };
     poll();
     return () => { cancelled = true; };
-  }, [instalockActive, mapDodgeActive, status, addLog]);
+  }, [instalockActive, mapDodgeActive, notificationsEnabled, status, addLog]);
+
+  useEffect(() => {
+    if (!pregameMatchId) return;
+    const keybind = localStorage.getItem("dodge_keybind") || "Ctrl+D";
+    let registered = false;
+
+    (async () => {
+      try {
+        if (await isRegistered(keybind)) await unregister(keybind);
+        await register(keybind, async (e) => {
+          if (e.state === "Pressed") {
+            try {
+              await invoke("pregame_quit", { matchId: pregameMatchId });
+              addLog("info", `Dodged match via ${keybind}`);
+              pushNotification({ id: `dodge-${pregameMatchId}`, type: "dodged", reason: "keybind", keybind });
+              setPregameMatchId(null);
+              lockedMatchRef.current = null;
+            } catch (err) {
+              const msg = typeof err === "string" ? err : err?.message || "Dodge failed";
+              addLog("error", `Dodge failed: ${msg}`);
+            }
+          }
+        });
+        registered = true;
+      } catch {}
+    })();
+
+    return () => {
+      if (registered) unregister(keybind).catch(() => {});
+    };
+  }, [pregameMatchId, addLog]);
 
   useEffect(() => { splooshimaApiKeyRef.current = splooshimaApiKey; }, [splooshimaApiKey]);
   useEffect(() => { splooshimaAvailableRef.current = splooshimaAvailable; }, [splooshimaAvailable]);
-  useEffect(() => { henrikApiKeyRef.current = henrikApiKey; }, [henrikApiKey]);
+  // useEffect(() => { localStorage.setItem("overlay_enabled", String(overlayEnabled)); }, [overlayEnabled]);
+  // useEffect(() => { localStorage.setItem("overlay_linger", String(overlayLinger)); }, [overlayLinger]);
+
+  useEffect(() => {
+    const unsubPromise = listen("notif-ready", () => {
+      overlayReadyRef.current = true;
+      const queue = pendingNotifsRef.current;
+      pendingNotifsRef.current = [];
+      addLog("info", `[Notif] Overlay ready, flushing ${queue.length} queued`);
+      if (queue.length > 0 && notifWindowRef.current) {
+        const t = localStorage.getItem("app_theme") || "crimson-moon";
+        emitTo("notification-overlay", "notif-theme", t).catch(() => {});
+        for (const n of queue) {
+          emitTo("notification-overlay", "notif-push", n).catch(() => {});
+        }
+      }
+    });
+    return () => { unsubPromise.then(fn => fn()); };
+  }, [addLog]);
+
+  const pushNotification = useCallback((data) => {
+    const pos = localStorage.getItem("notification_position") || "top-right";
+    const payload = { ...data, position: pos };
+
+    if (notifWindowRef.current && overlayReadyRef.current) {
+      const t = localStorage.getItem("app_theme") || "crimson-moon";
+      emitTo("notification-overlay", "notif-theme", t).catch(() => {});
+      emitTo("notification-overlay", "notif-push", payload)
+        .then(() => addLog("info", `[Notif] Pushed ${data.type} to overlay`))
+        .catch((e) => addLog("error", `[Notif] Push failed: ${e}`));
+      return;
+    }
+
+    pendingNotifsRef.current.push(payload);
+
+    if (notifWindowRef.current || creatingWindowRef.current) {
+      addLog("info", `[Notif] Queued ${data.type} (window ${creatingWindowRef.current ? "creating" : "not ready"})`);
+      return;
+    }
+
+    creatingWindowRef.current = true;
+    addLog("info", "[Notif] Creating overlay window");
+    (async () => {
+      try {
+        const existing = await WebviewWindow.getByLabel("notification-overlay");
+        if (existing) {
+          notifWindowRef.current = existing;
+          overlayReadyRef.current = true;
+          const t = localStorage.getItem("app_theme") || "crimson-moon";
+          emitTo("notification-overlay", "notif-theme", t).catch(() => {});
+          const q = pendingNotifsRef.current; pendingNotifsRef.current = [];
+          for (const n of q) emitTo("notification-overlay", "notif-push", n).catch(() => {});
+          return;
+        }
+      } catch {}
+
+      const NOTIF_W = 340, NOTIF_H = 500, MARGIN = 16;
+      let winX = 0, winY = 0;
+      const p = localStorage.getItem("notification_position") || "top-right";
+      try {
+        const raw = await invoke("get_valorant_monitor");
+        const mon = JSON.parse(raw);
+        const isRight = p.includes("right");
+        const isBottom = p.includes("bottom");
+        winX = isRight ? mon.x + mon.width - NOTIF_W - MARGIN : mon.x + MARGIN;
+        winY = isBottom ? mon.y + mon.height - NOTIF_H - MARGIN : mon.y + MARGIN;
+      } catch {
+        const isRight = p.includes("right");
+        const isBottom = p.includes("bottom");
+        winX = isRight ? screen.width - NOTIF_W - MARGIN : MARGIN;
+        winY = isBottom ? screen.height - NOTIF_H - MARGIN : MARGIN;
+      }
+
+      const win = new WebviewWindow("notification-overlay", {
+        url: "index.html?notification",
+        title: "VT Notification",
+        width: NOTIF_W,
+        height: NOTIF_H,
+        decorations: false,
+        transparent: true,
+        shadow: false,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        focusable: false,
+        resizable: false,
+        x: winX,
+        y: winY,
+        visible: false,
+      });
+      notifWindowRef.current = win;
+      win.once("tauri://error", (e) => {
+        addLog("error", `[Notif] Window error: ${JSON.stringify(e)}`);
+        notifWindowRef.current = null;
+        overlayReadyRef.current = false;
+        creatingWindowRef.current = false;
+      });
+      win.once("tauri://destroyed", () => {
+        notifWindowRef.current = null;
+        overlayReadyRef.current = false;
+        creatingWindowRef.current = false;
+      });
+    })();
+  }, [addLog]);
 
   useEffect(() => {
     if (status !== "connected") return;
     let cancelled = false;
     const PREFETCH_INTERVAL = 3000;
-    const HENRIK_WAIT = 3000;
 
     const prefetch = async () => {
       if (cancelled) return;
@@ -731,52 +940,6 @@ export default function App() {
           }
         }
 
-        const hKey = henrikApiKeyRef.current;
-        if (hKey) {
-          const needLevel = puuids.filter((id) => resolved[id] && resolved[id].account_level == null);
-          for (const puuid of needLevel) {
-            if (cancelled) return;
-            try {
-              const r = await invoke("henrik_get_account", { puuid, apiKey: hKey });
-              const j = JSON.parse(r);
-              if (j.status === 429) {
-                await new Promise((r) => setTimeout(r, HENRIK_WAIT));
-                const retry = await invoke("henrik_get_account", { puuid, apiKey: hKey });
-                const rj = JSON.parse(retry);
-                if (rj.data?.account_level) {
-                  resolved[puuid] = { ...resolved[puuid], account_level: rj.data.account_level };
-                  setCache(puuid, "account", resolved[puuid]);
-                }
-              } else if (j.data?.account_level) {
-                resolved[puuid] = { ...resolved[puuid], account_level: j.data.account_level };
-                setCache(puuid, "account", resolved[puuid]);
-              }
-            } catch {}
-          }
-
-          const unresolved = puuids.filter((id) => !resolved[id]);
-          for (const puuid of unresolved) {
-            if (cancelled) return;
-            try {
-              const r = await invoke("henrik_get_account", { puuid, apiKey: hKey });
-              const j = JSON.parse(r);
-              if (j.status === 429) {
-                await new Promise((r) => setTimeout(r, HENRIK_WAIT));
-                const retry = await invoke("henrik_get_account", { puuid, apiKey: hKey });
-                const rj = JSON.parse(retry);
-                if (rj.data) {
-                  const entry = { name: rj.data.name, tag: rj.data.tag, account_level: rj.data.account_level || null };
-                  resolved[puuid] = entry;
-                  setCache(puuid, "account", entry);
-                }
-              } else if (j.data) {
-                const entry = { name: j.data.name, tag: j.data.tag, account_level: j.data.account_level || null };
-                resolved[puuid] = entry;
-                setCache(puuid, "account", entry);
-              }
-            } catch {}
-          }
-        }
 
         prefetchedMatchRef.current = key;
         addLog("info", `[Prefetch] Done — ${Object.keys(resolved).length} accounts cached`);
@@ -793,6 +956,7 @@ export default function App() {
     try {
       await invoke("pregame_quit", { matchId: pregameMatchId });
       addLog("info", `Dodged match ${pregameMatchId}`);
+      pushNotification({ id: `dodge-${pregameMatchId}`, type: "dodged", reason: "manual" });
       setPregameMatchId(null);
       lockedMatchRef.current = null;
     } catch (err) {
@@ -803,6 +967,7 @@ export default function App() {
 
   return (
     <MotionConfig reducedMotion={disableAnimations ? "always" : "never"}>
+    {/* <Overlay connected={status === "connected"} enabled={overlayEnabled} theme={theme} player={player} linger={overlayLinger} /> */}
     <div
       className={`w-full h-full rounded-xl overflow-hidden border border-border flex flex-col shadow-2xl ${simplifiedTheme ? "bg-base-800" : ""}`}
       style={!simplifiedTheme ? {
@@ -984,7 +1149,7 @@ export default function App() {
           )}
           {activeTab === "matchinfo" && (
             <motion.div key="matchinfo" className="flex-1 flex min-h-0" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15, ease: "easeOut" }}>
-            <MatchInfoPage henrikApiKey={henrikApiKey} splooshimaApiKey={splooshimaApiKey} splooshimaAvailable={splooshimaAvailable} player={player} connected={status === "connected"} addLog={addLog} />
+            <MatchInfoPage splooshimaApiKey={splooshimaApiKey} splooshimaAvailable={splooshimaAvailable} player={player} connected={status === "connected"} addLog={addLog} />
             </motion.div>
           )}
           {activeTab === "mapdodge" && (
@@ -1005,8 +1170,6 @@ export default function App() {
               onSelectDelayChange={setSelectDelay}
               lockDelay={lockDelay}
               onLockDelayChange={setLockDelay}
-              henrikApiKey={henrikApiKey}
-              onHenrikApiKeyChange={setHenrikApiKey}
               splooshimaApiKey={splooshimaApiKey}
               onSplooshimaApiKeyChange={(v) => { setSplooshimaApiKey(v); localStorage.setItem("splooshima_api_key", v); }}
               theme={theme}
@@ -1038,6 +1201,14 @@ export default function App() {
               onDisableAnimationsChange={setDisableAnimations}
               updateInfo={updateInfo}
               onShowUpdate={() => setShowUpdateModal(true)}
+              notificationsEnabled={notificationsEnabled}
+              onNotificationsEnabledChange={(v) => { setNotificationsEnabled(v); localStorage.setItem("notifications_enabled", String(v)); }}
+              notificationPosition={notificationPosition}
+              onNotificationPositionChange={(v) => { setNotificationPosition(v); localStorage.setItem("notification_position", v); }}
+              // overlayEnabled={overlayEnabled}
+              // onOverlayEnabledChange={setOverlayEnabled}
+              // overlayLinger={overlayLinger}
+              // onOverlayLingerChange={setOverlayLinger}
             />
             </motion.div>
           )}
