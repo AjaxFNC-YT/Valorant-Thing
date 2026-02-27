@@ -288,9 +288,10 @@ export default function HomePage({ connected, player, refreshKey, onRefresh }) {
             const kdaText = kdaVal ? `${kdaVal} KDA` : "Perfect KDA";
 
             const q = m.queueId || "";
-            const MODE_NAMES = { competitive: "Competitive", unrated: "Unrated", deathmatch: "Deathmatch", spikerush: "Spike Rush", swiftplay: "Swiftplay", ggteam: "Escalation", premier: "Premier", newmap: "New Map", snowball: "Snowball" };
+            const MODE_NAMES = { competitive: "Competitive", unrated: "Unrated", deathmatch: "Deathmatch", spikerush: "Spike Rush", swiftplay: "Swiftplay", ggteam: "Escalation", hurm: "Team Deathmatch", premier: "Premier", newmap: "New Map", snowball: "Snowball Fight", onefa: "Replication", skirmish2v2: "Skirmish 2v2", valaram: "All Random One Site", custom: "Custom" };
             const modeName = MODE_NAMES[q] || (q ? q.charAt(0).toUpperCase() + q.slice(1) : "Custom");
             const isDeathmatch = q === "deathmatch";
+            const isEscalation = q === "ggteam";
 
             let resultText, resultColor, borderColor;
             if (isDeathmatch) {
@@ -298,6 +299,10 @@ export default function HomePage({ connected, player, refreshKey, onRefresh }) {
               resultText = dmWon ? "VICTORY" : "DEFEAT";
               resultColor = dmWon ? "text-green-400" : "text-red-400";
               borderColor = dmWon ? "border-green-500/20" : "border-red-500/20";
+            } else if (isEscalation) {
+              resultText = m.won ? "VICTORY" : "DEFEAT";
+              resultColor = m.won ? "text-green-400" : "text-red-400";
+              borderColor = m.won ? "border-green-500/20" : "border-red-500/20";
             } else {
               const draw = m.roundsWon === m.roundsLost && m.roundsWon === 0;
               const realDraw = !draw && m.roundsWon === m.roundsLost;
@@ -334,7 +339,7 @@ export default function HomePage({ connected, player, refreshKey, onRefresh }) {
 
                   <div className="w-16 shrink-0">
                     <p className={`text-[10px] font-display font-bold uppercase tracking-wide ${resultColor}`}>{resultText}</p>
-                    <p className="text-xs font-mono text-text-muted">{isDeathmatch ? `${m.kills} kills` : `${m.roundsWon}-${m.roundsLost}`}</p>
+                    <p className="text-xs font-mono text-text-muted">{isDeathmatch || isEscalation ? `${m.kills} kills` : `${m.roundsWon}-${m.roundsLost}`}</p>
                   </div>
 
                   <div className="w-20 shrink-0">

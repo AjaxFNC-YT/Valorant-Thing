@@ -588,14 +588,9 @@ export default function App() {
           const enemyScore = myTeam === "Blue" ? (redTeam?.RoundsWon ?? 0) : (blueTeam?.RoundsWon ?? 0);
           const modeUrl = match.GameMode || "";
           const queueId = match.MatchmakingData?.QueueID || match.QueueID || "";
-          let mode = "Custom";
-          if (modeUrl.includes("competitive") || queueId === "competitive") mode = "Competitive";
-          else if (modeUrl.includes("unrated") || queueId === "unrated") mode = "Unrated";
-          else if (modeUrl.includes("deathmatch") || queueId === "deathmatch") mode = "Deathmatch";
-          else if (modeUrl.includes("spikerush") || queueId === "spikerush") mode = "Spike Rush";
-          else if (modeUrl.includes("swiftplay") || queueId === "swiftplay") mode = "Swiftplay";
-          else if (modeUrl.includes("ggteam") || queueId === "ggteam") mode = "Escalation";
-          else if (queueId === "premier") mode = "Premier";
+          const MODE_NAMES = { competitive: "Competitive", unrated: "Unrated", deathmatch: "Deathmatch", spikerush: "Spike Rush", swiftplay: "Swiftplay", ggteam: "Escalation", hurm: "Team Deathmatch", premier: "Premier", newmap: "New Map", snowball: "Snowball Fight", onefa: "Replication", skirmish2v2: "Skirmish 2v2", valaram: "All Random One Site", custom: "Custom" };
+          const modeKey = Object.keys(MODE_NAMES).find(k => queueId === k || modeUrl.includes(k));
+          const mode = modeKey ? MODE_NAMES[modeKey] : (queueId || "Custom");
           rpcMatchInfoRef.current = { allyScore, enemyScore, mode, isDeathmatch: mode === "Deathmatch" };
 
           if (mode === "Deathmatch" && notifiedMatchRef.current !== matchId && localStorage.getItem("notifications_enabled") !== "false") {
@@ -623,7 +618,8 @@ export default function App() {
             notifiedMatchRef.current = matchId;
             const mapData = mapLookupRef.current[match.MapID?.toLowerCase()] || null;
             const podId = match.GamePodID || "";
-            const dodgeKeybind = localStorage.getItem("dodge_keybind") || "Ctrl+D";
+            const dodgeKeybindEnabled = localStorage.getItem("dodge_keybind_enabled") !== "false";
+            const dodgeKeybind = dodgeKeybindEnabled ? (localStorage.getItem("dodge_keybind") || "Ctrl+D") : null;
             addLog("info", `[Notif] Pregame detected — triggering match-found (match: ${matchId}, map: ${mapData?.displayName || match.MapID})`);
             pushNotification({
               id: `match-${matchId}`,
@@ -718,17 +714,29 @@ export default function App() {
 
           if (!prevPhase && pendingUnqueueRef.current) {
             pendingUnqueueRef.current = false;
-            addLog("info", "[Misc] Confirmed out-of-match — leaving queue");
-            invoke("leave_queue")
-              .then(() => { addLog("info", "[Misc] Successfully left queue after dodge"); pushNotification({ id: `queue-unqueue-${Date.now()}`, type: "queue", action: "unqueue" }); })
-              .catch((e) => addLog("error", `[Misc] Failed to leave queue: ${e}`));
+            addLog("info", "[Misc] Confirmed out-of-match — checking party leader for unqueue");
+            invoke("get_party").then((raw) => {
+              const party = JSON.parse(raw);
+              const me = party.members?.find(m => m.puuid === party.my_puuid);
+              if (!me?.is_owner) { addLog("info", "[Misc] Not party leader — skipping unqueue"); return; }
+              return invoke("leave_queue").then(() => {
+                addLog("info", "[Misc] Successfully left queue after dodge");
+                pushNotification({ id: `queue-unqueue-${Date.now()}`, type: "queue", action: "unqueue" });
+              });
+            }).catch((e) => addLog("error", `[Misc] Unqueue failed: ${e}`));
           }
           if (!prevPhase && pendingRequeueRef.current) {
             pendingRequeueRef.current = false;
-            addLog("info", "[Misc] Confirmed out-of-match — requeuing");
-            invoke("enter_queue")
-              .then(() => { addLog("info", "[Misc] Successfully requeued after match"); pushNotification({ id: `queue-requeue-${Date.now()}`, type: "queue", action: "requeue" }); })
-              .catch((e) => addLog("error", `[Misc] Failed to requeue: ${e}`));
+            addLog("info", "[Misc] Confirmed out-of-match — checking party leader for requeue");
+            invoke("get_party").then((raw) => {
+              const party = JSON.parse(raw);
+              const me = party.members?.find(m => m.puuid === party.my_puuid);
+              if (!me?.is_owner) { addLog("info", "[Misc] Not party leader — skipping requeue"); return; }
+              return invoke("enter_queue").then(() => {
+                addLog("info", "[Misc] Successfully requeued after match");
+                pushNotification({ id: `queue-requeue-${Date.now()}`, type: "queue", action: "requeue" });
+              });
+            }).catch((e) => addLog("error", `[Misc] Requeue failed: ${e}`));
           }
 
           logOnce("not_in_match", "info", "Not in a match");
@@ -748,6 +756,7 @@ export default function App() {
 
   useEffect(() => {
     if (!pregameMatchId) return;
+    if (localStorage.getItem("dodge_keybind_enabled") === "false") return;
     const keybind = localStorage.getItem("dodge_keybind") || "Ctrl+D";
     let registered = false;
 

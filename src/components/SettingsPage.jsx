@@ -89,8 +89,14 @@ const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"]);
 const KEY_MAP = { Control: "Ctrl", Meta: "Super", " ": "Space" };
 
 function DodgeKeybindSetting() {
+  const [enabled, setEnabled] = useState(() => localStorage.getItem("dodge_keybind_enabled") !== "false");
   const [keybind, setKeybind] = useState(() => localStorage.getItem("dodge_keybind") || "Ctrl+D");
   const [recording, setRecording] = useState(false);
+
+  const handleToggle = useCallback((v) => {
+    setEnabled(v);
+    localStorage.setItem("dodge_keybind_enabled", String(v));
+  }, []);
 
   const handleRecord = useCallback(() => {
     setRecording(true);
@@ -114,18 +120,25 @@ function DodgeKeybindSetting() {
 
   return (
     <div className="space-y-1.5">
-      <p className="text-xs font-body text-text-muted">Dodge keybind</p>
-      <button
-        onClick={handleRecord}
-        className={`w-full px-3 py-2 rounded-lg text-xs font-body text-left transition-colors border ${
-          recording
-            ? "bg-val-red/10 border-val-red/40 text-val-red animate-pulse"
-            : "bg-base-600 border-border text-text-secondary hover:text-text-primary hover:bg-base-500"
-        }`}
-      >
-        {recording ? "Press a key combo..." : keybind}
-      </button>
-      <p className="text-[10px] font-body text-text-muted">Works globally while in agent select</p>
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-body text-text-muted">Dodge keybind</p>
+        <Toggle enabled={enabled} onChange={handleToggle} />
+      </div>
+      {enabled && (
+        <>
+          <button
+            onClick={handleRecord}
+            className={`w-full px-3 py-2 rounded-lg text-xs font-body text-left transition-colors border ${
+              recording
+                ? "bg-val-red/10 border-val-red/40 text-val-red animate-pulse"
+                : "bg-base-600 border-border text-text-secondary hover:text-text-primary hover:bg-base-500"
+            }`}
+          >
+            {recording ? "Press a key combo..." : keybind}
+          </button>
+          <p className="text-[10px] font-body text-text-muted">Works globally while in agent select</p>
+        </>
+      )}
     </div>
   );
 }
@@ -198,7 +211,8 @@ const CONFIG_KEYS = [
   "splooshima_api_key", "mapdodge-config", "auto_unqueue", "auto_requeue",
   "instalock_select_delay", "instalock_lock_delay", "instalock-config",
   "fake-status-config", "overlay_enabled", "overlay_linger",
-  "notifications_enabled", "notification_position", "dodge_keybind",
+  "notifications_enabled", "notification_position", "dodge_keybind", "dodge_keybind_enabled",
+  "instalock-profiles", "instalock-active-profile",
 ];
 
 export default function SettingsPage({

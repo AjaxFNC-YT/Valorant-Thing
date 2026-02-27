@@ -171,10 +171,10 @@ function QueueCard({ n }) {
   const isRequeue = n.action === "requeue";
   const title = isRequeue ? "Requeued" : "Left Queue";
   const desc = isRequeue ? "Automatically requeued after match" : "Automatically left queue after dodge";
-  const color = isRequeue ? "rgb(var(--accent-blue))" : "#a78bfa";
+  const color = isRequeue ? "rgb(var(--accent-blue))" : "rgb(var(--val-red))";
   const strip = isRequeue
     ? "linear-gradient(180deg, rgb(var(--accent-blue)), rgb(var(--accent-blue) / 0.3))"
-    : "linear-gradient(180deg, #a78bfa, #a78bfa80)";
+    : "linear-gradient(180deg, rgb(var(--val-red)), rgb(var(--val-red) / 0.3))";
   return (
     <CardShell stripBg={strip}>
       <div className="flex-1 px-3.5 py-3 flex flex-col gap-2 min-w-0">

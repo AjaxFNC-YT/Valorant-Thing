@@ -80,14 +80,9 @@ export default function OverlayWindow() {
 
       const modeUrl = match.GameMode || match.Mode || "";
       const queueId = match.MatchmakingData?.QueueID || match.QueueID || "";
-      let modeName = queueId || "Custom";
-      if (modeUrl.includes("competitive") || queueId === "competitive") modeName = "Competitive";
-      else if (modeUrl.includes("unrated") || queueId === "unrated") modeName = "Unrated";
-      else if (modeUrl.includes("deathmatch") || queueId === "deathmatch") modeName = "Deathmatch";
-      else if (modeUrl.includes("spikerush") || queueId === "spikerush") modeName = "Spike Rush";
-      else if (modeUrl.includes("swiftplay") || queueId === "swiftplay") modeName = "Swiftplay";
-      else if (modeUrl.includes("ggteam") || queueId === "ggteam") modeName = "Escalation";
-      else if (queueId === "premier") modeName = "Premier";
+      const MODE_NAMES = { competitive: "Competitive", unrated: "Unrated", deathmatch: "Deathmatch", spikerush: "Spike Rush", swiftplay: "Swiftplay", ggteam: "Escalation", hurm: "Team Deathmatch", premier: "Premier", newmap: "New Map", snowball: "Snowball Fight", onefa: "Replication", skirmish2v2: "Skirmish 2v2", valaram: "All Random One Site", custom: "Custom" };
+      const modeKey = Object.keys(MODE_NAMES).find(k => queueId === k || modeUrl.includes(k));
+      const modeName = modeKey ? MODE_NAMES[modeKey] : (queueId || "Custom");
       setMatchInfo({ mode: modeName, server: match.GamePodID || "" });
 
       let playerList;

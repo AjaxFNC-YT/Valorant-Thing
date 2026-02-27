@@ -44,25 +44,47 @@ const AGENT_SILHOUETTE = (
 const NONE_AGENT = { uuid: "none", displayName: "None", displayIcon: null };
 
 const CONFIG_KEY = "instalock-config";
+const PROFILES_KEY = "instalock-profiles";
+const ACTIVE_PROFILE_KEY = "instalock-active-profile";
+
+const slimAgent = (a) => a ? { uuid: a.uuid, displayName: a.displayName, displayIcon: a.displayIcon } : null;
 
 function saveConfig(selectedAgent, perMapSelections, active) {
-  const slim = (a) => a ? { uuid: a.uuid, displayName: a.displayName, displayIcon: a.displayIcon } : null;
   const perMap = {};
   for (const [mapId, agent] of Object.entries(perMapSelections)) {
-    perMap[mapId] = slim(agent);
+    perMap[mapId] = slimAgent(agent);
   }
-  localStorage.setItem(CONFIG_KEY, JSON.stringify({
-    defaultAgent: slim(selectedAgent),
-    perMap,
-    active,
-  }));
+  localStorage.setItem(CONFIG_KEY, JSON.stringify({ defaultAgent: slimAgent(selectedAgent), perMap, active }));
 }
 
 function loadConfig() {
-  try {
-    const raw = localStorage.getItem(CONFIG_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
+  try { return JSON.parse(localStorage.getItem(CONFIG_KEY)) || null; } catch { return null; }
+}
+
+function loadProfiles() {
+  try { return JSON.parse(localStorage.getItem(PROFILES_KEY)) || []; } catch { return []; }
+}
+
+function saveProfilesLS(profiles) {
+  localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles));
+}
+
+function resolveAgent(sorted, saved) {
+  if (!saved) return null;
+  if (saved.uuid === "none") return NONE_AGENT;
+  return sorted.find(a => a.uuid === saved.uuid) || null;
+}
+
+function restorePerMap(sorted, perMap) {
+  const restored = {};
+  if (perMap) {
+    for (const [mapId, saved] of Object.entries(perMap)) {
+      const agent = resolveAgent(sorted, saved);
+      if (agent) restored[mapId] = agent;
+      else if (saved?.uuid === "none") restored[mapId] = NONE_AGENT;
+    }
+  }
+  return restored;
 }
 
 export default function InstalockPage({ onActiveChange, onConfigChange, connected }) {
@@ -76,6 +98,12 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
   const [active, setActive] = useState(false);
   const [loading, setLoading] = useState(true);
   const [ownedAgents, setOwnedAgents] = useState(null);
+  const [profiles, setProfiles] = useState([]);
+  const [activeProfileId, setActiveProfileId] = useState(null);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [renamingProfile, setRenamingProfile] = useState(null);
+  const [renameValue, setRenameValue] = useState("");
+  const profileMenuRef = useRef(null);
   const configLoaded = useRef(false);
 
   useEffect(() => {
@@ -86,56 +114,122 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
 
   useEffect(() => {
     Promise.all([
-      fetch("https://valorant-api.com/v1/agents?isPlayableCharacter=true")
-        .then((r) => r.json()),
-      fetch("https://valorant-api.com/v1/maps")
-        .then((r) => r.json()),
-    ])
-      .then(([agentsRes, mapsRes]) => {
-        const sorted = (agentsRes.data || []).sort((a, b) =>
-          a.displayName.localeCompare(b.displayName)
-        );
-        setAgents(sorted);
-        const playable = (mapsRes.data || []).filter(
-          (m) => !EXCLUDED_MAPS.includes(m.displayName)
-        );
-        setMaps(playable);
+      fetch("https://valorant-api.com/v1/agents?isPlayableCharacter=true").then(r => r.json()),
+      fetch("https://valorant-api.com/v1/maps").then(r => r.json()),
+    ]).then(([agentsRes, mapsRes]) => {
+      const sorted = (agentsRes.data || []).sort((a, b) => a.displayName.localeCompare(b.displayName));
+      setAgents(sorted);
+      const playable = (mapsRes.data || []).filter(m => !EXCLUDED_MAPS.includes(m.displayName));
+      setMaps(playable);
 
+      let profs = loadProfiles();
+      let activeId = localStorage.getItem(ACTIVE_PROFILE_KEY);
+
+      if (!profs.length) {
         const cfg = loadConfig();
-        if (cfg) {
-          const findAgent = (saved) => {
-            if (!saved) return null;
-            if (saved.uuid === "none") return NONE_AGENT;
-            return sorted.find((a) => a.uuid === saved.uuid) || null;
-          };
-          if (cfg.defaultAgent) setSelectedAgent(findAgent(cfg.defaultAgent));
-          if (cfg.perMap) {
-            const restored = {};
-            for (const [mapId, saved] of Object.entries(cfg.perMap)) {
-              const agent = findAgent(saved);
-              if (agent) restored[mapId] = agent;
-              else if (saved?.uuid === "none") restored[mapId] = NONE_AGENT;
-            }
-            setPerMapSelections(restored);
-          }
-          if (cfg.active) {
-            setActive(true);
-            onActiveChange?.(true);
-          }
-          configLoaded.current = true;
-        }
-      })
-      .catch((e) => console.error("[instalock] fetch failed:", e))
+        profs = [{ id: "default", name: "Default", defaultAgent: cfg?.defaultAgent || null, perMap: cfg?.perMap || {} }];
+        activeId = "default";
+        saveProfilesLS(profs);
+        localStorage.setItem(ACTIVE_PROFILE_KEY, activeId);
+      }
+      if (!activeId || !profs.find(p => p.id === activeId)) {
+        activeId = profs[0].id;
+        localStorage.setItem(ACTIVE_PROFILE_KEY, activeId);
+      }
+
+      setProfiles(profs);
+      setActiveProfileId(activeId);
+
+      const profile = profs.find(p => p.id === activeId);
+      const cfg = loadConfig();
+      const source = profile || cfg;
+      if (source) {
+        if (source.defaultAgent) setSelectedAgent(resolveAgent(sorted, source.defaultAgent));
+        setPerMapSelections(restorePerMap(sorted, source.perMap));
+        if (cfg?.active) { setActive(true); onActiveChange?.(true); }
+        configLoaded.current = true;
+      }
+    }).catch(e => console.error("[instalock] fetch failed:", e))
       .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
-    if (!loading) saveConfig(selectedAgent, perMapSelections, active);
-  }, [selectedAgent, perMapSelections, active, loading]);
+    if (loading || !activeProfileId) return;
+    saveConfig(selectedAgent, perMapSelections, active);
+    const perMap = {};
+    for (const [mapId, agent] of Object.entries(perMapSelections)) perMap[mapId] = slimAgent(agent);
+    setProfiles(prev => {
+      const updated = prev.map(p => p.id === activeProfileId ? { ...p, defaultAgent: slimAgent(selectedAgent), perMap } : p);
+      saveProfilesLS(updated);
+      return updated;
+    });
+  }, [selectedAgent, perMapSelections, active, loading, activeProfileId]);
 
   useEffect(() => {
     if (!loading) onConfigChange?.({ maps, selectedAgent, perMapSelections });
   }, [maps, selectedAgent, perMapSelections, loading]);
+
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+    const handler = (e) => { if (profileMenuRef.current && !profileMenuRef.current.contains(e.target)) { setProfileMenuOpen(false); setRenamingProfile(null); } };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [profileMenuOpen]);
+
+  const activeProfile = profiles.find(p => p.id === activeProfileId);
+
+  const switchProfile = (newId) => {
+    if (newId === activeProfileId) { setProfileMenuOpen(false); return; }
+    const perMap = {};
+    for (const [mapId, agent] of Object.entries(perMapSelections)) perMap[mapId] = slimAgent(agent);
+    const saved = profiles.map(p => p.id === activeProfileId ? { ...p, defaultAgent: slimAgent(selectedAgent), perMap } : p);
+    const target = saved.find(p => p.id === newId);
+    if (!target) return;
+    setSelectedAgent(resolveAgent(agents, target.defaultAgent));
+    setPerMapSelections(restorePerMap(agents, target.perMap));
+    setActiveProfileId(newId);
+    localStorage.setItem(ACTIVE_PROFILE_KEY, newId);
+    setProfiles(saved);
+    saveProfilesLS(saved);
+    setProfileMenuOpen(false);
+  };
+
+  const createProfile = () => {
+    const id = Date.now().toString(36);
+    const name = `Profile ${profiles.length + 1}`;
+    const perMap = {};
+    for (const [mapId, agent] of Object.entries(perMapSelections)) perMap[mapId] = slimAgent(agent);
+    const saved = profiles.map(p => p.id === activeProfileId ? { ...p, defaultAgent: slimAgent(selectedAgent), perMap } : p);
+    const updated = [...saved, { id, name, defaultAgent: null, perMap: {} }];
+    setSelectedAgent(null);
+    setPerMapSelections({});
+    setActiveProfileId(id);
+    localStorage.setItem(ACTIVE_PROFILE_KEY, id);
+    setProfiles(updated);
+    saveProfilesLS(updated);
+    setProfileMenuOpen(false);
+  };
+
+  const deleteProfile = () => {
+    if (profiles.length <= 1) return;
+    const remaining = profiles.filter(p => p.id !== activeProfileId);
+    const target = remaining[0];
+    setSelectedAgent(resolveAgent(agents, target.defaultAgent));
+    setPerMapSelections(restorePerMap(agents, target.perMap));
+    setActiveProfileId(target.id);
+    localStorage.setItem(ACTIVE_PROFILE_KEY, target.id);
+    setProfiles(remaining);
+    saveProfilesLS(remaining);
+    setProfileMenuOpen(false);
+  };
+
+  const finishRename = () => {
+    if (!renamingProfile || !renameValue.trim()) { setRenamingProfile(null); return; }
+    const updated = profiles.map(p => p.id === renamingProfile ? { ...p, name: renameValue.trim() } : p);
+    setProfiles(updated);
+    saveProfilesLS(updated);
+    setRenamingProfile(null);
+  };
 
   const FREE_AGENTS = new Set(["brimstone", "jett", "phoenix", "sage", "sova"]);
   const isOwned = (agent) => !ownedAgents || ownedAgents.has(agent.uuid.toLowerCase()) || FREE_AGENTS.has(agent.displayName.toLowerCase());
@@ -211,6 +305,62 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
   return (
     <div className="flex-1 flex flex-col min-h-0 p-4 gap-3">
       <div className="flex items-center gap-2 shrink-0">
+        <div className="relative" ref={profileMenuRef}>
+          <button
+            onClick={() => setProfileMenuOpen(!profileMenuOpen)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-base-700 border border-border rounded-lg text-xs font-display text-text-secondary hover:text-text-primary transition-colors"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="shrink-0">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
+            </svg>
+            <span className="max-w-[100px] truncate">{activeProfile?.name || "Default"}</span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 text-text-muted">
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          {profileMenuOpen && (
+            <div className="absolute top-full left-0 mt-1 min-w-[180px] bg-base-700 border border-border rounded-lg shadow-xl z-20 overflow-hidden">
+              {profiles.map(p => (
+                <div key={p.id} className={`flex items-center gap-2 px-3 py-2 text-xs font-body hover:bg-base-600 transition-colors cursor-pointer ${p.id === activeProfileId ? "text-accent-blue" : "text-text-secondary"}`}>
+                  {renamingProfile === p.id ? (
+                    <input
+                      value={renameValue}
+                      onChange={e => setRenameValue(e.target.value)}
+                      onBlur={finishRename}
+                      onKeyDown={e => { if (e.key === "Enter") finishRename(); if (e.key === "Escape") setRenamingProfile(null); }}
+                      className="flex-1 bg-transparent outline-none text-text-primary text-xs"
+                      autoFocus
+                      onClick={e => e.stopPropagation()}
+                    />
+                  ) : (
+                    <span className="flex-1 truncate" onClick={() => switchProfile(p.id)}>{p.name}</span>
+                  )}
+                  {p.id === activeProfileId && renamingProfile !== p.id && (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0">
+                      <path d="M20 6L9 17l-5-5" />
+                    </svg>
+                  )}
+                </div>
+              ))}
+              <div className="border-t border-border" />
+              <button onClick={createProfile} className="w-full px-3 py-2 text-left text-xs font-body text-text-muted hover:text-text-primary hover:bg-base-600 transition-colors">
+                + New Profile
+              </button>
+              <button
+                onClick={() => { if (activeProfile) { setRenamingProfile(activeProfileId); setRenameValue(activeProfile.name); } }}
+                className="w-full px-3 py-2 text-left text-xs font-body text-text-muted hover:text-text-primary hover:bg-base-600 transition-colors"
+              >
+                Rename
+              </button>
+              {profiles.length > 1 && (
+                <button onClick={deleteProfile} className="w-full px-3 py-2 text-left text-xs font-body text-val-red/70 hover:text-val-red hover:bg-base-600 transition-colors">
+                  Delete
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="flex bg-base-700 rounded-lg p-0.5 border border-border">
           <button
             onClick={() => { setSubTab("all"); setSelectedMap(null); setSearch(""); }}
