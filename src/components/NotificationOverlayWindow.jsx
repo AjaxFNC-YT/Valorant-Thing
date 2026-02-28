@@ -15,6 +15,11 @@ export default function NotificationOverlayWindow() {
     document.documentElement.style.background = "transparent";
     document.body.style.background = "transparent";
 
+    getCurrentWindow().setIgnoreCursorEvents(true).catch(() => {});
+
+    const blockMenu = (e) => e.preventDefault();
+    document.addEventListener("contextmenu", blockMenu);
+
     const applyTheme = (payload) => {
       const name = typeof payload === "string" ? payload : payload?.name;
       const vars = typeof payload === "object" ? payload?.vars : null;
@@ -25,7 +30,7 @@ export default function NotificationOverlayWindow() {
     };
     applyTheme(localStorage.getItem("app_theme"));
     const unlisten = listen("notif-theme", (e) => applyTheme(e.payload));
-    return () => { unlisten.then(fn => fn()); };
+    return () => { unlisten.then(fn => fn()); document.removeEventListener("contextmenu", blockMenu); };
   }, []);
 
   useEffect(() => {
@@ -84,7 +89,7 @@ export default function NotificationOverlayWindow() {
               initial={{ x: isRight ? 340 : -340, opacity: 0, scale: 0.92 }}
               animate={{ x: 0, opacity: 1, scale: 1, transition: { type: "spring", stiffness: 400, damping: 22, mass: 0.8 } }}
               exit={{ x: isRight ? 340 : -340, opacity: 0, transition: { duration: 0.25, ease: "easeIn" } }}
-              style={{ pointerEvents: "auto" }}
+              style={{ pointerEvents: "none" }}
             >
               <NotificationToast notification={n} onDismiss={handleDismiss} />
             </motion.div>

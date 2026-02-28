@@ -1241,7 +1241,7 @@ export default function App() {
               updateInfo={updateInfo}
               onShowUpdate={() => setShowUpdateModal(true)}
               notificationsEnabled={notificationsEnabled}
-              onNotificationsEnabledChange={(v) => { setNotificationsEnabled(v); localStorage.setItem("notifications_enabled", String(v)); }}
+              onNotificationsEnabledChange={(v) => { setNotificationsEnabled(v); localStorage.setItem("notifications_enabled", String(v)); if (!v && notifWindowRef.current) { try { notifWindowRef.current.destroy(); } catch {} notifWindowRef.current = null; overlayReadyRef.current = false; creatingWindowRef.current = false; } }}
               notificationPosition={notificationPosition}
               onNotificationPositionChange={(v) => { setNotificationPosition(v); localStorage.setItem("notification_position", v); if (notifWindowRef.current) { try { notifWindowRef.current.destroy(); } catch {} notifWindowRef.current = null; overlayReadyRef.current = false; creatingWindowRef.current = false; } }}
               notificationScreen={notificationScreen}
