@@ -18,10 +18,14 @@ export default function NotificationToast({ notification, onDismiss }) {
       const tick = () => {
         const left = Math.max(0, totalMs - (Date.now() - startTime));
         setRemaining(left);
-        if (left > 0) rafRef.current = requestAnimationFrame(tick);
+        if (left > 0) {
+          rafRef.current = requestAnimationFrame(tick);
+        } else {
+          timerRef.current = setTimeout(() => onDismiss?.(notification.id), 2000);
+        }
       };
       tick();
-      return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+      return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); if (timerRef.current) clearTimeout(timerRef.current); };
     }
 
     const ms = DISMISS_MS[notification.type];
@@ -49,7 +53,7 @@ export default function NotificationToast({ notification, onDismiss }) {
         {type === "locking" && (
           <>
             <div className="flex items-baseline gap-1.5">
-              <span className="text-sm font-body text-text-secondary">Locking agent in</span>
+              <span className="text-sm font-body text-text-secondary">Locking {notification.agentName || "agent"} in</span>
               <span
                 className="text-sm font-display font-bold tabular-nums"
                 style={{ color: "rgb(var(--val-red))", minWidth: "2.5ch", textAlign: "right" }}

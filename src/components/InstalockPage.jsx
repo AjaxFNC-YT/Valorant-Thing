@@ -1,8 +1,18 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
+import { exportVtFile, readVtFile } from "../cloud";
 
 const EXCLUDED_MAPS = ["The Range", "Basic Training", "Skirmish A", "Skirmish B", "Skirmish C"];
+const DM_MAPS = new Set(["Kasbah", "Glitch", "Drift", "Piazza", "District"]);
+const ROLE_ORDER = { "Duelist": 0, "Initiator": 1, "Controller": 2, "Sentinel": 3 };
+const ROLES = ["Duelist", "Initiator", "Controller", "Sentinel"];
+const ROLE_ICONS = {
+  Duelist: "https://media.valorant-api.com/agents/roles/dbe8757e-9e92-4ed4-b39f-9dfc589691d4/displayicon.png",
+  Initiator: "https://media.valorant-api.com/agents/roles/1b47567f-8f7b-444b-aae3-b0c634622d10/displayicon.png",
+  Controller: "https://media.valorant-api.com/agents/roles/4ee40330-ecdd-4f2f-98a8-eb1243428373/displayicon.png",
+  Sentinel: "https://media.valorant-api.com/agents/roles/5fc02f99-4091-4486-a531-98459a3e95e9/displayicon.png",
+};
 const noAnim = () => localStorage.getItem("disable_animations") === "true";
 const T0 = { duration: 0 };
 
@@ -105,9 +115,14 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [importMode, setImportMode] = useState(false);
   const [importValue, setImportValue] = useState("");
+  const [importError, setImportError] = useState("");
   const [nameModal, setNameModal] = useState(null);
   const [nameModalValue, setNameModalValue] = useState("");
+  const [shareResult, setShareResult] = useState(null);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [roleFilter, setRoleFilter] = useState("all");
   const profileMenuRef = useRef(null);
+  const vtFileRef = useRef(null);
   const configLoaded = useRef(false);
 
   useEffect(() => {
@@ -221,23 +236,75 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
     setProfileMenuOpen(false);
   };
 
-  const shareProfile = (id) => {
+  const shareProfile = async (id) => {
     const profile = profiles.find(p => p.id === id);
     if (!profile) return;
-    navigator.clipboard.writeText(btoa(JSON.stringify({ name: profile.name, defaultAgent: profile.defaultAgent, perMap: profile.perMap })));
+    setDotMenuId(null);
+    setProfileMenuOpen(false);
+    setShareLoading(true);
+    setShareResult(null);
+    try {
+      const code = await invoke("cloud_save", { saveType: "agent", data: { name: profile.name, defaultAgent: profile.defaultAgent, perMap: profile.perMap } });
+      navigator.clipboard.writeText(code);
+      setShareResult({ code, copied: true });
+    } catch (e) {
+      setShareResult({ error: e.message });
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
+  const exportProfileFile = (id) => {
+    const profile = profiles.find(p => p.id === id);
+    if (!profile) return;
+    exportVtFile("agent", { name: profile.name, defaultAgent: profile.defaultAgent, perMap: profile.perMap }, `${profile.name}.vt`);
     setDotMenuId(null);
     setProfileMenuOpen(false);
   };
 
-  const startImport = () => {
+  const startImport = async () => {
+    const val = importValue.trim();
+    if (!val) return;
+    setImportError("");
+    if (val.toUpperCase().startsWith("VT-AGENT-")) {
+      try {
+        const result = await invoke("cloud_load", { code: val });
+        if (result.type !== "agent") { setImportError("Not a profile code"); return; }
+        setImportMode(false);
+        setImportValue("");
+        setProfileMenuOpen(false);
+        setNameModal({ type: "import", importData: result.data });
+        setNameModalValue(result.data.name || `Imported ${profiles.length + 1}`);
+      } catch (e) {
+        setImportError(e.message);
+      }
+    } else {
+      try {
+        const data = JSON.parse(atob(val));
+        setImportMode(false);
+        setImportValue("");
+        setProfileMenuOpen(false);
+        setNameModal({ type: "import", importData: data });
+        setNameModalValue(data.name || `Imported ${profiles.length + 1}`);
+      } catch {
+        setImportError("Invalid code or legacy data");
+      }
+    }
+  };
+
+  const importProfileFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
     try {
-      const data = JSON.parse(atob(importValue.trim()));
+      const vt = await readVtFile(file);
+      if (vt.type !== "agent") { setImportError("Not a profile file"); return; }
       setImportMode(false);
       setImportValue("");
       setProfileMenuOpen(false);
-      setNameModal({ type: "import", importData: data });
-      setNameModalValue(data.name || `Imported ${profiles.length + 1}`);
-    } catch {}
+      setNameModal({ type: "import", importData: vt.data });
+      setNameModalValue(vt.data.name || `Imported ${profiles.length + 1}`);
+    } catch { setImportError("Invalid .vt file"); }
+    e.target.value = "";
   };
 
   const startRename = (id) => {
@@ -291,6 +358,7 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
 
   const filteredAgents = useMemo(() => {
     let list = agents;
+    if (roleFilter !== "all") list = list.filter(a => a.role?.displayName === roleFilter);
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter((a) => a.displayName.toLowerCase().includes(q));
@@ -298,9 +366,13 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
     return [...list].sort((a, b) => {
       const aOwned = isOwned(a) ? 0 : 1;
       const bOwned = isOwned(b) ? 0 : 1;
-      return aOwned - bOwned || a.displayName.localeCompare(b.displayName);
+      if (aOwned !== bOwned) return aOwned - bOwned;
+      const aRole = ROLE_ORDER[a.role?.displayName] ?? 99;
+      const bRole = ROLE_ORDER[b.role?.displayName] ?? 99;
+      if (aRole !== bRole) return aRole - bRole;
+      return a.displayName.localeCompare(b.displayName);
     });
-  }, [agents, search, ownedAgents]);
+  }, [agents, search, ownedAgents, roleFilter]);
 
   const handleAgentClick = (agent) => {
     if (!isOwned(agent)) return;
@@ -419,7 +491,11 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
                       </button>
                       <button onClick={() => shareProfile(p.id)} className="w-full px-3 py-1.5 text-left text-xs font-body text-text-secondary hover:text-text-primary hover:bg-base-500 transition-colors flex items-center gap-2">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-                        Share
+                        Share Code
+                      </button>
+                      <button onClick={() => exportProfileFile(p.id)} className="w-full px-3 py-1.5 text-left text-xs font-body text-text-secondary hover:text-text-primary hover:bg-base-500 transition-colors flex items-center gap-2">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+                        Export File
                       </button>
                       {profiles.length > 1 && (
                         <button onClick={() => { setConfirmDeleteId(p.id); setDotMenuId(null); setProfileMenuOpen(false); }} className="w-full px-3 py-1.5 text-left text-xs font-body text-val-red/70 hover:text-val-red hover:bg-base-500 transition-colors flex items-center gap-2">
@@ -433,18 +509,25 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
               ))}
               <div className="border-t border-border" />
               {importMode ? (
-                <div className="px-2.5 py-2 flex gap-1.5">
-                  <input
-                    value={importValue}
-                    onChange={e => setImportValue(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter") startImport(); if (e.key === "Escape") { setImportMode(false); setImportValue(""); } }}
-                    placeholder="Paste code..."
-                    className="flex-1 min-w-0 bg-base-800 border border-border rounded px-2 py-1 text-xs font-body text-text-primary placeholder:text-text-muted focus:outline-none"
-                    autoFocus
-                  />
-                  <button onClick={startImport} className="px-2 py-1 bg-accent-blue/20 text-accent-blue rounded text-xs font-body hover:bg-accent-blue/30 transition-colors shrink-0">
-                    Go
+                <div className="px-2.5 py-2 space-y-1.5">
+                  <div className="flex gap-1.5">
+                    <input
+                      value={importValue}
+                      onChange={e => { setImportValue(e.target.value); setImportError(""); }}
+                      onKeyDown={e => { if (e.key === "Enter") startImport(); if (e.key === "Escape") { setImportMode(false); setImportValue(""); setImportError(""); } }}
+                      placeholder="VT-AGENT-XXXXX"
+                      className="flex-1 min-w-0 bg-base-800 border border-border rounded px-2 py-1 text-xs font-body text-text-primary placeholder:text-text-muted focus:outline-none"
+                      autoFocus
+                    />
+                    <button onClick={startImport} className="px-2 py-1 bg-accent-blue/20 text-accent-blue rounded text-xs font-body hover:bg-accent-blue/30 transition-colors shrink-0">
+                      Go
+                    </button>
+                  </div>
+                  {importError && <p className="text-[10px] font-body text-val-red px-0.5">{importError}</p>}
+                  <button onClick={() => vtFileRef.current?.click()} className="w-full text-left text-[10px] font-body text-text-muted hover:text-text-secondary transition-colors px-0.5">
+                    or import from .vt file
                   </button>
+                  <input ref={vtFileRef} type="file" accept=".vt" onChange={importProfileFile} className="hidden" />
                 </div>
               ) : (
                 <>
@@ -452,7 +535,7 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     New Profile
                   </button>
-                  <button onClick={() => setImportMode(true)} className="w-full px-3 py-2 text-left text-xs font-body text-text-muted hover:text-text-primary hover:bg-base-600 transition-colors flex items-center gap-2">
+                  <button onClick={() => { setImportMode(true); setImportError(""); }} className="w-full px-3 py-2 text-left text-xs font-body text-text-muted hover:text-text-primary hover:bg-base-600 transition-colors flex items-center gap-2">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     Import Profile
                   </button>
@@ -495,6 +578,35 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
         </div>
       </div>
 
+      {(subTab === "all" || selectedMap) && (
+      <div className="flex items-center gap-1 shrink-0">
+        <button
+          onClick={() => setRoleFilter("all")}
+          className={`px-2.5 py-1 text-[10px] font-display font-medium rounded-md transition-colors ${
+            roleFilter === "all"
+              ? "bg-val-red/20 text-val-red border border-val-red/40"
+              : "text-text-muted hover:text-text-secondary border border-transparent"
+          }`}
+        >
+          ALL
+        </button>
+        {ROLES.map(role => (
+          <button
+            key={role}
+            onClick={() => setRoleFilter(roleFilter === role ? "all" : role)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors ${
+              roleFilter === role
+                ? "bg-val-red/20 text-val-red border border-val-red/40"
+                : "text-text-muted hover:text-text-secondary border border-transparent"
+            }`}
+          >
+            <img src={ROLE_ICONS[role]} alt="" className={`w-3 h-3 ${roleFilter === role ? "brightness-125" : "opacity-50"}`} />
+            <span className="text-[10px] font-display font-medium">{role}</span>
+          </button>
+        ))}
+      </div>
+      )}
+
       <div className="flex-1 min-h-0 overflow-y-auto pr-1">
         {subTab === "all" ? (
           <AllMapsView
@@ -502,10 +614,12 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
             selectedAgent={selectedAgent}
             onAgentClick={handleAgentClick}
             isOwned={isOwned}
+            roleFilter={roleFilter}
           />
         ) : (
           <PerMapView
             agents={agents}
+            filteredAgents={filteredAgents}
             maps={maps}
             search={search}
             selectedMap={selectedMap}
@@ -516,6 +630,7 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
             onNoneClick={handleNoneClick}
             getAgentForMap={getAgentForMap}
             isOwned={isOwned}
+            roleFilter={roleFilter}
           />
         )}
       </div>
@@ -572,53 +687,48 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
           </div>
         </div>
       )}
+
+      {(shareResult || shareLoading) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => { setShareResult(null); setShareLoading(false); }}>
+          <div className="bg-base-700 border border-border rounded-xl p-5 max-w-xs w-full space-y-3 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent-blue shrink-0"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+              <p className="text-sm font-display font-semibold text-text-primary">Share Profile</p>
+            </div>
+            {shareLoading && <p className="text-xs font-body text-text-muted">Generating code...</p>}
+            {shareResult?.code && (
+              <>
+                <div className="flex items-center gap-2 bg-base-800 border border-border rounded-lg px-3 py-2">
+                  <code className="text-sm font-mono text-accent-blue flex-1">{shareResult.code}</code>
+                  <button onClick={() => { navigator.clipboard.writeText(shareResult.code); setShareResult(r => ({ ...r, copied: true })); }} className="text-text-muted hover:text-text-primary transition-colors shrink-0">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                  </button>
+                </div>
+                {shareResult.copied && <p className="text-[10px] font-body text-status-green">Copied to clipboard!</p>}
+                <p className="text-[10px] font-body text-text-muted">Code expires in 14 days</p>
+              </>
+            )}
+            {shareResult?.error && <p className="text-xs font-body text-val-red">{shareResult.error}</p>}
+            <div className="flex justify-end pt-1">
+              <button onClick={() => { setShareResult(null); setShareLoading(false); }} className="px-3 py-1.5 rounded-lg text-xs font-body bg-base-600 border border-border text-text-secondary hover:text-text-primary transition-colors">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function AllMapsView({ agents, selectedAgent, onAgentClick, isOwned }) {
-  return (
-    <div>
-      <p className="text-text-secondary text-xs font-display tracking-wide mb-3">
-        Select Agent
-      </p>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1.5">
-        {agents.map((agent, i) => (
-          <motion.div key={agent.uuid} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={noAnim() ? T0 : { duration: 0.15, delay: Math.min(i * 0.02, 0.4) }}>
-          <AgentCard
-            agent={agent}
-            selected={selectedAgent?.uuid === agent.uuid}
-            onClick={() => onAgentClick(agent)}
-            owned={isOwned(agent)}
-          />
-          </motion.div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PerMapView({ agents, maps, search, selectedMap, onMapSelect, onMapBack, perMapSelections, onAgentClick, onNoneClick, getAgentForMap, isOwned }) {
-  if (!selectedMap) {
-    const q = search.toLowerCase();
-    const filtered = search.trim()
-      ? maps.filter((m) => m.displayName.toLowerCase().includes(q))
-      : maps;
-
+function AllMapsView({ agents, selectedAgent, onAgentClick, isOwned, roleFilter }) {
+  if (roleFilter !== "all") {
     return (
       <div>
-        <p className="text-text-secondary text-xs font-display tracking-wide mb-3">
-          Select Map
-        </p>
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
-          {filtered.map((map, i) => (
-            <motion.div key={map.uuid} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={noAnim() ? T0 : { duration: 0.15, delay: Math.min(i * 0.03, 0.3) }}>
-            <MapCard
-              map={map}
-              selectedAgent={getAgentForMap(map.uuid)}
-              isDefault={!perMapSelections[map.uuid] && !!getAgentForMap(map.uuid)}
-              onClick={() => onMapSelect(map)}
-            />
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1.5">
+          {agents.map((agent, i) => (
+            <motion.div key={agent.uuid} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={noAnim() ? T0 : { duration: 0.15, delay: Math.min(i * 0.02, 0.4) }}>
+            <AgentCard agent={agent} selected={selectedAgent?.uuid === agent.uuid} onClick={() => onAgentClick(agent)} owned={isOwned(agent)} />
             </motion.div>
           ))}
         </div>
@@ -626,11 +736,115 @@ function PerMapView({ agents, maps, search, selectedMap, onMapSelect, onMapBack,
     );
   }
 
-  const q = search.toLowerCase();
-  const filtered = search.trim()
-    ? agents.filter((a) => a.displayName.toLowerCase().includes(q))
-    : agents;
+  const groups = ROLES.map(role => ({
+    role,
+    agents: agents.filter(a => a.role?.displayName === role),
+  })).filter(g => g.agents.length > 0);
+
+  let idx = 0;
+  return (
+    <div className="space-y-4">
+      {groups.map(g => (
+        <div key={g.role}>
+          <div className="flex items-center gap-2 mb-2">
+            <img src={ROLE_ICONS[g.role]} alt="" className="w-3.5 h-3.5 opacity-60" />
+            <span className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider">{g.role}s</span>
+            <div className="flex-1 h-px bg-border/50" />
+          </div>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1.5">
+            {g.agents.map(agent => {
+              const i = idx++;
+              return (
+                <motion.div key={agent.uuid} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={noAnim() ? T0 : { duration: 0.15, delay: Math.min(i * 0.02, 0.4) }}>
+                <AgentCard agent={agent} selected={selectedAgent?.uuid === agent.uuid} onClick={() => onAgentClick(agent)} owned={isOwned(agent)} />
+                </motion.div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function NoneButton({ selected, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`group flex flex-col items-center gap-1 p-1.5 rounded-lg border transition-all duration-150 ${
+        selected ? "bg-base-500/30 border-text-muted/40" : "border-transparent hover:bg-base-600/50"
+      }`}
+    >
+      <div className="w-14 h-14 rounded-md bg-base-600 flex items-center justify-center">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted/50">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M4.93 4.93l14.14 14.14" />
+        </svg>
+      </div>
+      <span className={`text-[11px] font-body leading-tight ${
+        selected ? "text-text-primary font-medium" : "text-text-muted group-hover:text-text-secondary"
+      }`}>None</span>
+    </button>
+  );
+}
+
+function PerMapView({ agents, filteredAgents, maps, search, selectedMap, onMapSelect, onMapBack, perMapSelections, onAgentClick, onNoneClick, getAgentForMap, isOwned, roleFilter }) {
+  if (!selectedMap) {
+    const q = search.toLowerCase();
+    const filtered = search.trim()
+      ? maps.filter((m) => m.displayName.toLowerCase().includes(q))
+      : maps;
+
+    const standard = filtered.filter(m => !DM_MAPS.has(m.displayName));
+    const dm = filtered.filter(m => DM_MAPS.has(m.displayName));
+    let idx = 0;
+
+    return (
+      <div className="space-y-4">
+        {standard.length > 0 && (
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted/60"><path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3V7z" /><path d="M9 4v13M15 7v13" /></svg>
+              <span className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider">Standard Maps</span>
+              <div className="flex-1 h-px bg-border/50" />
+            </div>
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
+              {standard.map(map => {
+                const i = idx++;
+                return (
+                  <motion.div key={map.uuid} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={noAnim() ? T0 : { duration: 0.15, delay: Math.min(i * 0.03, 0.3) }}>
+                  <MapCard map={map} selectedAgent={getAgentForMap(map.uuid)} isDefault={!perMapSelections[map.uuid] && !!getAgentForMap(map.uuid)} onClick={() => onMapSelect(map)} />
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {dm.length > 0 && (
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted/60"><circle cx="12" cy="12" r="3" /><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" /></svg>
+              <span className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider">Deathmatch Maps</span>
+              <div className="flex-1 h-px bg-border/50" />
+            </div>
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
+              {dm.map(map => {
+                const i = idx++;
+                return (
+                  <motion.div key={map.uuid} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={noAnim() ? T0 : { duration: 0.15, delay: Math.min(i * 0.03, 0.3) }}>
+                  <MapCard map={map} selectedAgent={getAgentForMap(map.uuid)} isDefault={!perMapSelections[map.uuid] && !!getAgentForMap(map.uuid)} onClick={() => onMapSelect(map)} />
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const currentSelection = perMapSelections[selectedMap.uuid];
+  const isNoneSelected = currentSelection?.uuid === "none";
 
   return (
     <div>
@@ -647,70 +861,76 @@ function PerMapView({ agents, maps, search, selectedMap, onMapSelect, onMapBack,
           {selectedMap.displayName}
         </span>
         {currentSelection && (
-          <span className={`text-xs font-display ml-auto ${currentSelection.uuid === "none" ? "text-text-muted" : "text-accent-blue"}`}>
+          <span className={`text-xs font-display ml-auto ${isNoneSelected ? "text-text-muted" : "text-accent-blue"}`}>
             {currentSelection.displayName}
           </span>
         )}
       </div>
-      <p className="text-text-secondary text-xs font-display tracking-wide mb-3">
-        Select Agent for {selectedMap.displayName}
-      </p>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1.5">
-        <button
-          onClick={onNoneClick}
-          className={`group flex flex-col items-center gap-1 p-1.5 rounded-lg border transition-all duration-150 ${
-            currentSelection?.uuid === "none"
-              ? "bg-base-500/30 border-text-muted/40"
-              : "border-transparent hover:bg-base-600/50"
-          }`}
-        >
-          <div className="w-14 h-14 rounded-md bg-base-600 flex items-center justify-center">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted/50">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M4.93 4.93l14.14 14.14" />
-            </svg>
+      {roleFilter !== "all" ? (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1.5">
+          <NoneButton selected={isNoneSelected} onClick={onNoneClick} />
+          {filteredAgents.map(agent => (
+            <AgentCard key={agent.uuid} agent={agent} selected={currentSelection?.uuid === agent.uuid} onClick={() => onAgentClick(agent)} owned={isOwned(agent)} />
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1.5">
+            <NoneButton selected={isNoneSelected} onClick={onNoneClick} />
           </div>
-          <span className={`text-[11px] font-body leading-tight ${
-            currentSelection?.uuid === "none" ? "text-text-primary font-medium" : "text-text-muted group-hover:text-text-secondary"
-          }`}>None</span>
-        </button>
-        {filtered.map((agent) => (
-          <AgentCard
-            key={agent.uuid}
-            agent={agent}
-            selected={currentSelection?.uuid === agent.uuid}
-            onClick={() => onAgentClick(agent)}
-            owned={isOwned(agent)}
-          />
-        ))}
-      </div>
+          {ROLES.map(role => {
+            const roleAgents = filteredAgents.filter(a => a.role?.displayName === role);
+            if (!roleAgents.length) return null;
+            return (
+              <div key={role}>
+                <div className="flex items-center gap-2 mb-2">
+                  <img src={ROLE_ICONS[role]} alt="" className="w-3.5 h-3.5 opacity-60" />
+                  <span className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider">{role}s</span>
+                  <div className="flex-1 h-px bg-border/50" />
+                </div>
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1.5">
+                  {roleAgents.map(agent => (
+                    <AgentCard key={agent.uuid} agent={agent} selected={currentSelection?.uuid === agent.uuid} onClick={() => onAgentClick(agent)} owned={isOwned(agent)} />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
 function AgentCard({ agent, selected, onClick, owned = true }) {
-  const [showTooltip, setShowTooltip] = useState(false);
-
   return (
-    <div className="relative" onMouseEnter={() => !owned && setShowTooltip(true)} onMouseLeave={() => setShowTooltip(false)}>
+    <div className="relative">
       <button
         onClick={onClick}
         disabled={!owned}
         className={`group flex flex-col items-center gap-1 p-1.5 rounded-lg border transition-all duration-150 w-full ${
           !owned
-            ? "border-transparent opacity-30 cursor-not-allowed"
+            ? "border-transparent opacity-40 cursor-not-allowed"
             : selected
               ? "bg-accent-blue/10 border-accent-blue/60"
               : "border-transparent hover:bg-base-600/50"
         }`}
       >
-        <div className={`w-14 h-14 rounded-md overflow-hidden bg-base-600 ${!owned ? "grayscale" : ""}`}>
+        <div className={`relative w-14 h-14 rounded-md overflow-hidden bg-base-600 ${!owned ? "grayscale" : ""}`}>
           <img
             src={agent.displayIcon}
             alt={agent.displayName}
             className="w-full h-full object-cover"
             loading="lazy"
           />
+          {!owned && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/70">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0110 0v4" />
+              </svg>
+            </div>
+          )}
         </div>
         <span className={`text-[11px] font-body leading-tight truncate max-w-[72px] ${
           !owned
@@ -720,11 +940,6 @@ function AgentCard({ agent, selected, onClick, owned = true }) {
           {agent.displayName}
         </span>
       </button>
-      {showTooltip && (
-        <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded bg-base-900 border border-border text-[10px] font-body text-text-muted whitespace-nowrap z-10 pointer-events-none">
-          Agent Locked
-        </div>
-      )}
     </div>
   );
 }

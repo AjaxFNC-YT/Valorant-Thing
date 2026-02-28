@@ -1,6 +1,7 @@
 # Valorant Thing — Complete Architecture Reference
 
 > This document describes **every** aspect of the codebase so an AI agent (or developer) can understand the full system, match existing code style, reuse existing utilities, and make correct edits.
+> This document was also created by an AI agent (Claude Opus 4.6 Thinking)
 
 ---
 
@@ -62,8 +63,11 @@
 | `serde` / `serde_json` | JSON serialization |
 | `base64` | Encoding/decoding tokens and presence data |
 | `regex` | Parsing ShooterGame.log for region/shard |
-| `native-tls` | TLS for XMPP connections (comes via dependencies) |
+| `native-tls` | TLS for XMPP connections |
 | `discord-rich-presence` | Discord IPC for Rich Presence |
+| `reqwest` | HTTP client for cloud API requests (features: `json`, `native-tls`) |
+| `tokio` | Async runtime (features: `full`) |
+| `tauri-plugin-global-shortcut` | Global keyboard shortcuts (dodge keybind) |
 
 ### Key npm Packages
 
@@ -82,21 +86,30 @@
 ValorantApp/
 ├── src/                          # React frontend
 │   ├── main.jsx                  # React entry point (StrictMode + App)
-│   ├── App.jsx                   # Central state machine (~870 lines)
+│   ├── App.jsx                   # Central state machine (~1400 lines)
 │   ├── index.css                 # Tailwind + theme variables + custom CSS
+│   ├── cloud.js                  # .vt file export/import helpers (DOM-only)
+│   ├── matchCache.js             # Match data cache utilities
 │   └── components/
 │       ├── TitleBar.jsx          # Window title bar (drag, minimize, close)
 │       ├── Sidebar.jsx           # Navigation sidebar with tabs
 │       ├── PlayerInfo.jsx        # Player card + connection status indicator
+│       ├── Tooltip.jsx           # Reusable hover tooltip component
 │       ├── HomePage.jsx          # Stats overview, rank, match history
-│       ├── InstalockPage.jsx     # Agent auto-select/lock configuration
-│       ├── MapDodgePage.jsx      # Map blacklist auto-dodge
+│       ├── InstalockPage.jsx     # Agent auto-select/lock with role filters + profiles
+│       ├── MapDodgePage.jsx      # Map blacklist auto-dodge (standard/DM sections)
 │       ├── FakeStatusPage.jsx    # XMPP presence spoofing UI
 │       ├── PartyPage.jsx         # Party management (members, friends, invite)
+│       ├── ChatPage.jsx          # In-game chat system
 │       ├── MatchInfoPage.jsx     # Live match player info + ranks
 │       ├── MiscPage.jsx          # Menu video customization, queue automation
-│       ├── SettingsPage.jsx      # App settings, themes, config import/export
-│       └── LogsPage.jsx          # Debug log viewer
+│       ├── SettingsPage.jsx      # App settings, themes, share codes, config import/export
+│       ├── LogsPage.jsx          # Debug log viewer
+│       ├── DevPage.jsx           # Developer debug page (logs, notifications, cloud, state)
+│       ├── NotificationOverlayWindow.jsx  # Transparent overlay window for notifications
+│       ├── NotificationToast.jsx # Notification toast components (match-found, locking, etc.)
+│       ├── Overlay.jsx           # In-game overlay component
+│       └── OverlayWindow.jsx     # In-game overlay window
 ├── src-tauri/                    # Rust backend
 │   ├── Cargo.toml                # Rust dependencies
 │   ├── tauri.conf.json           # Tauri config (window, bundle, security)
@@ -107,14 +120,15 @@ ValorantApp/
 │   └── src/
 │       ├── main.rs               # Binary entry (calls lib::run)
 │       ├── lib.rs                # All #[tauri::command] definitions + app setup
+│       ├── cloud.rs              # Cloud save/load API (reqwest HTTP client)
 │       ├── discord.rs            # Discord Rich Presence IPC
 │       └── riot/
 │           ├── mod.rs            # Module exports
 │           ├── types.rs          # ConnectionState + PlayerInfo structs
-│           ├── http.rs           # ALL HTTP functions (local, pd, glz, henrik)
+│           ├── http.rs           # HTTP functions (local, pd, glz via Node.js)
 │           ├── connection.rs     # Connect, disconnect, health check, token refresh
-│           ├── game.rs           # Game actions (agent select, party, queue, stats)
-│           ├── process.rs        # Process detection, lockfile, region parsing
+│           ├── game.rs           # Game actions (agent select, party, queue, chat, stats)
+│           ├── process.rs        # Process detection, lockfile, region, monitor enum
 │           ├── xmpp.rs           # XMPP connection + fake presence
 │           └── logging.rs        # Event-based logging to frontend
 ├── index.html                    # Vite entry HTML
@@ -122,7 +136,7 @@ ValorantApp/
 ├── vite.config.js                # Vite config (port 1420)
 ├── tailwind.config.js            # Tailwind theme extensions
 ├── postcss.config.js             # PostCSS (tailwind + autoprefixer)
-└── changelog.md                  # Release changelog (gitignored)
+└── CHANGELOG.md                  # Release changelog
 ```
 
 ---
@@ -366,6 +380,17 @@ Called from frontend every ~1s. Reads any pending data from the XMPP stream with
 - `xmpp_check_local_presences` — Reads `/chat/v4/presences` from local API, decodes base64 private data.
 - `local_api_discover` — Debug tool, hits `/help`, `/chat/v1/me`, `/chat/v1/session`.
 
+### Cloud API (`cloud.rs`)
+
+Handles cloud save/load for share codes (profiles, themes, configs). Uses `reqwest` for HTTP requests to `https://vt-cloud.ajaxfnc.com`.
+
+| Command | Method | Endpoint | Purpose |
+|---------|--------|----------|---------|
+| `cloud_save` | POST | `/save` | Saves data (type + JSON), returns share code (e.g. `VT-AGENT-XXXXX`) |
+| `cloud_load` | GET | `/load/{code}` | Loads data by share code, returns `{ type, data }` |
+
+These are async Tauri commands (not `spawn_blocking`) since `reqwest` is natively async. Previously these were JS `fetch()` calls in `cloud.js` — moved to Rust in v1.8.0.
+
 ### Discord RPC (`discord.rs`)
 
 Simple Discord Rich Presence integration via IPC pipe:
@@ -439,6 +464,20 @@ Frontend listens via `listen("backend-log", ...)` in `App.jsx`, skips messages s
 | `xmpp_send_raw` | `data` | — | XMPP |
 | `xmpp_check_local_presences` | — | `String` (JSON) | XMPP |
 | `local_api_discover` | — | `String` (JSON) | XMPP |
+| `get_app_version` | — | `String` | App |
+| `show_window_no_focus` | `label` | — | Window |
+| `cloud_save` | `save_type, data` | `String` (code) | Cloud |
+| `cloud_load` | `code` | `Value` (JSON) | Cloud |
+| `change_queue` | `queue_id` | `String` | Game |
+| `get_custom_configs` | — | `String` (JSON) | Game |
+| `set_custom_settings` | `map, mode, pod, ...` | `String` | Game |
+| `start_custom_game_match` | — | `String` | Game |
+| `get_chat_conversations` | — | `String` (JSON) | Chat |
+| `get_chat_messages` | `cid` | `String` (JSON) | Chat |
+| `send_chat_message` | `cid, message, msg_type` | `String` | Chat |
+| `get_chat_participants` | `cid` | `String` (JSON) | Chat |
+| `invite_to_party` | `target_puuid` | `String` | Party |
+| `request_to_join_party` | `target_puuid` | `String` | Party |
 
 ---
 
@@ -446,7 +485,7 @@ Frontend listens via `listen("backend-log", ...)` in `App.jsx`, skips messages s
 
 ### App.jsx — Central State Machine
 
-`App.jsx` (~870 lines) is the single root component. It owns **all** top-level state and passes it down as props. There is no Redux, no Context API, no state management library.
+`App.jsx` (~1400 lines) is the single root component. It owns **all** top-level state and passes it down as props. There is no Redux, no Context API, no state management library.
 
 #### State Variables (all declared with `useState`)
 
@@ -456,6 +495,7 @@ Frontend listens via `listen("backend-log", ...)` in `App.jsx`, skips messages s
 | `player` | `PlayerInfo \| null` | — | Current player info |
 | `activeTab` | string | — | Current sidebar tab |
 | `showLogs` | bool | `show_logs` | Show Logs tab in sidebar |
+| `devTab` | bool | `dev_tab_enabled` | Show Dev tab in sidebar |
 | `theme` | string | `app_theme` | Current theme name |
 | `simplifiedTheme` | bool | `simplified_theme` | Use solid bg vs gradient |
 | `customTheme` | object | `custom_theme` | Custom theme config |
@@ -464,16 +504,19 @@ Frontend listens via `listen("backend-log", ...)` in `App.jsx`, skips messages s
 | `startMinimized` | bool | `start_minimized` | Start in tray |
 | `minimizeToTray` | bool | `minimize_to_tray` | Minimize to tray vs taskbar |
 | `closeWithGame` | bool | `close_with_game` | Exit when Valorant closes |
-| `devMode` | bool | `dev_mode` | Ctrl+Shift+I opens devtools |
 | `disableAnimations` | bool | `disable_animations` | Disable all animations |
 | `nodeInstalled` | bool | — | Node.js availability |
 | `updateInfo` | object | — | Available update data |
 | `updating` | bool | — | Update download in progress |
-| `fakeStatusUnsaved` | bool | — | Block tab change if unsaved fake status |
+| `fakeStatusUnsaved` | bool | — | Track unsaved fake status changes |
+| `unsavedModal` | string \| null | — | Pending tab for unsaved changes modal |
 | `logs` | array | — | Application logs (max 200) |
 | `instalockActive` | bool | — | Instalock feature active |
-| `henrikApiKey` | string | `henrik_api_key` | Henrik API key |
+| `splooshimaApiKey` | string | `splooshima_api_key` | Splooshima API key |
 | `mapDodgeActive` | bool | — | Map dodge feature active |
+| `notificationsEnabled` | bool | `notifications_enabled` | Enable notification overlays |
+| `notificationPosition` | string | `notification_position` | Notification position (top-right, etc.) |
+| `notificationScreen` | string | `notification_screen` | Which monitor shows notifications |
 | `pregameMatchId` | string | — | Current pregame match ID |
 | `autoUnqueue` | bool | `auto_unqueue` | Auto leave queue after dodge |
 | `autoRequeue` | bool | `auto_requeue` | Auto requeue after match end |
@@ -494,6 +537,10 @@ Frontend listens via `listen("backend-log", ...)` in `App.jsx`, skips messages s
 | `rpcMatchInfoRef` | In-game score data for Discord RPC |
 | `pendingUnqueueRef` | Pending auto-unqueue action |
 | `pendingRequeueRef` | Pending auto-requeue action |
+| `notifWindowRef` | Reference to the notification overlay WebviewWindow |
+| `fakeStatusActionRef` | Ref to FakeStatusPage's save/discard actions (for unsaved modal) |
+| `mapLookupRef` | Map URL → map data lookup (for notification map names) |
+| `notifiedMatchRef` | Match ID already notified (prevents duplicate notifications) |
 
 #### Core Loops (useEffect intervals)
 
@@ -513,6 +560,10 @@ Pages use `AnimatePresence mode="wait"` for tab transitions. Each page is wrappe
 
 **Special case:** `FakeStatusPage` uses `absolute inset-0` positioning and `hidden` class toggle instead of `AnimatePresence` because XMPP connections must persist when switching tabs (unmounting would kill the connection).
 
+**Unsaved changes modal:** When switching away from Fake Status with unsaved changes, App.jsx intercepts the tab change and shows an animated modal with three options: **Save & Apply** (saves + navigates), **Discard** (resets + navigates), or click backdrop to cancel. Actions are triggered via `fakeStatusActionRef.current.save()` / `.discard()`.
+
+**Notification system:** App.jsx manages a transparent overlay WebviewWindow (`notifWindowRef`) for in-app notifications. Notifications are pushed via `pushNotification()` which emits `push-notification` events to the overlay window. The overlay window is created on-demand and positioned on the configured monitor.
+
 ### Page Components
 
 #### HomePage.jsx
@@ -526,32 +577,37 @@ Pages use `AnimatePresence mode="wait"` for tab transitions. Each page is wrappe
 #### InstalockPage.jsx
 - Two sub-tabs: "All Agents" (global default) and "Per-Map" selection.
 - Fetches agents from `valorant-api.com/v1/agents` and maps from `valorant-api.com/v1/maps`.
-- Filters out non-playable maps (`EXCLUDED_MAPS` constant).
-- Checks owned agents via `get_owned_agents` command (grays out unowned).
+- **Role filter bar** — ALL / Duelist / Initiator / Controller / Sentinel buttons with official Valorant role icons from the API.
+- **Role-grouped agent grid** — Agents grouped by role sections with headers (icon + role name + divider line). Within each role, sorted alphabetically with owned agents first.
+- Unowned agents display a **lock icon overlay** (grayscale + dark overlay with padlock SVG) and are pushed to the end of their role group.
+- **Per-map view** — Maps split into **Standard Maps** and **Deathmatch Maps** sections (Kasbah, Glitch, Drift, Piazza, District). Role filters only shown when inside a map's agent selection, hidden on map list.
 - Supports a "None" agent option per map (disables instalock for that map).
+- **Profiles system** — Multiple named agent configs, create/rename/delete/share/import.
+- **Share codes** — `invoke("cloud_save")` to upload profile, returns `VT-AGENT-XXXXX` code. Import via code or `.vt` file.
 - Config saved to `localStorage` key `instalock-config`.
-- `saveConfig()` / `loadConfig()` helpers handle serialization.
+- Constants: `EXCLUDED_MAPS`, `DM_MAPS`, `ROLE_ORDER`, `ROLES`, `ROLE_ICONS`.
 - Toggle switch activates/deactivates the feature.
 
 #### MapDodgePage.jsx
-- Shows all competitive maps with splash art.
+- Maps split into **Standard Maps** and **Deathmatch Maps** sections with headers (map icon / crosshair icon + label + divider line).
+- `DM_MAPS` constant: `Set(["Kasbah", "Glitch", "Drift", "Piazza", "District"])`.
 - Toggle per map to add to blacklist.
 - Config saved to `localStorage` key `mapdodge-config`.
 - Master toggle to activate/deactivate auto-dodge.
 - Blacklisted maps shown with red border and crossed-out styling.
 
-#### FakeStatusPage.jsx (~630 lines, largest component)
+#### FakeStatusPage.jsx (~690 lines)
 - XMPP-based presence spoofing UI.
-- Three sections: **Rank & Identity**, **Game State**, **Premier**.
+- Four sections: **Status** (online/away/hidden), **Rank & Identity**, **Game State**, **Premier**.
 - On enable: connects XMPP, then sends fake presence every 3s via `setInterval`.
 - On disable: disconnects XMPP.
-- Fields: competitive tier (dropdown), account level, leaderboard position, player card ID, player title ID, session state, queue, party size, scores, premier division/tag/roster.
-- Fetches card/title data from `valorant-api.com` for previews.
-- Player card and title show preview images.
-- "Unsaved changes" bar floats at bottom (absolute positioned) when config is dirty.
-- Config persisted in `localStorage` key `fakestatus_config`.
-- Has built-in log viewer (uses XMPP logs via `xmpp_get_logs`).
-- Uses `xmpp_get_status` to get real card/title IDs (shown as "current" defaults).
+- Fields: status mode, competitive tier (dropdown), account level, leaderboard position, player card ID, player title ID, session state, queue, party size, scores, premier division/roster/score.
+- Fetches card/title data from `valorant-api.com` for search/preview via `ApiSearch` component.
+- **Save/Reset buttons in top header bar** (next to toggle) — appear only when there are unsaved changes. No more floating bottom bar.
+- Exposes `save`/`discard` actions via `actionRef` prop so App.jsx can trigger them from the unsaved changes modal.
+- Config persisted in `localStorage` key `fake-status-config`.
+- Has built-in log viewer with filter buttons (all, own_presence, f_debug, debug, sent, system).
+- Auto-starts XMPP if `fakestatus_enabled` was set in a previous session.
 
 #### PartyPage.jsx
 - Shows current party members with cards, ranks, levels.
@@ -561,12 +617,18 @@ Pages use `AnimatePresence mode="wait"` for tab transitions. Each page is wrappe
 - MMR lookup for each party member (fetched on load).
 - Detects party leader for permission-gating kick/invite controls.
 
+#### ChatPage.jsx
+- In-game chat system using Riot's local chat API.
+- Shows conversations list, messages per conversation, and participants.
+- Send messages to conversations.
+- Uses `get_chat_conversations`, `get_chat_messages`, `send_chat_message`, `get_chat_participants` commands.
+
 #### MatchInfoPage.jsx
 - Polls `check_current_game` every 5s when connected.
 - Pregame: shows agent select state with team composition.
 - In-game: shows both teams with player info.
 - For each player: resolves name, fetches MMR (tier + RR), shows agent icon.
-- Optional Henrik API integration for extended account info (requires API key).
+- Optional Splooshima API integration for extended account info (requires API key).
 - Rank images from `valorant-api.com/v1/competitivetiers`.
 
 #### MiscPage.jsx
@@ -581,17 +643,41 @@ Pages use `AnimatePresence mode="wait"` for tab transitions. Each page is wrappe
 
 #### SettingsPage.jsx
 - **Timing**: Instalock select delay and lock delay sliders (0-2000ms).
-- **Henrik API Key**: Input field for the third-party API key.
+- **API Key**: Input field for Splooshima API key.
 - **Behavior**: Start with Windows, start minimized, minimize to tray, close with game.
 - **Appearance**: Theme selector (7 presets + custom), simplified theme toggle, custom theme editor with gradient builder and color picker.
-- **Other**: Show logs toggle, Discord RPC toggle, developer mode toggle, disable animations toggle.
-- **Config Export/Import**: Exports all `localStorage` as a `.valthing` JSON file. Import restores it.
-- **About section**: Shows current version string.
+- **Notifications**: Enable/disable, position selector (top-left/top-right/bottom-left/bottom-right), monitor selector (game screen, primary, or specific display).
+- **Other**: Show logs toggle, Discord RPC toggle, disable animations toggle.
+- **Share Codes**: Share custom theme via cloud code (`VT-THEME-XXXXX`), share full settings config via cloud code (`VT-CONFIG-XXXXX`). Import by code or `.vt` file.
+- **Config Export/Import**: Export theme/config as `.vt` JSON file, or import from file. Also supports importing via cloud share codes.
+- **About section**: Shows current version string (fetched via `get_app_version` command).
 
 #### LogsPage.jsx
 - Displays app logs with timestamps, type badges (INFO/ERR/MATCH), click-to-copy.
 - Auto-scrolls to bottom on new entries.
 - Clear button resets logs.
+
+#### DevPage.jsx
+- **Hidden by default** — Enable via `__VT_DEV()` in browser console (toggles `dev_tab_enabled` in localStorage).
+- Tabbed interface with 4 tabs: **Logs**, **Notifications**, **Cloud**, **State**.
+- **Logs tab**: Same as LogsPage but embedded, with clear button.
+- **Notifications tab**: Test notification system — push fake notifications for match-found, locking, locked, dodged, queue actions with customizable parameters.
+- **Cloud tab**: Manual cloud save/load testing — specify type + JSON data to save, or enter code to load. Shows raw results.
+- **State tab**: Debug state inspection and presets for common configurations.
+
+#### NotificationOverlayWindow.jsx
+- Entry point for the transparent notification overlay WebviewWindow.
+- Listens for `push-notification` events from the main window.
+- Manages a stack of active notifications (max visible, auto-dismiss).
+- Applies theme from the main window via `set-theme` event.
+- Renders `NotificationToast` components for each active notification.
+
+#### NotificationToast.jsx
+- Renders individual notification toasts with animated entrance/exit.
+- Notification types: `match-found` (map splash + name), `locking` (agent icon + countdown), `locked` (agent icon + confirmation), `dodged` (dodge reason), `queue` (requeue/unqueue actions).
+- Each type has distinct styling and iconography.
+- Auto-dismiss after configurable duration.
+- Position-aware layout (top-left, top-right, bottom-left, bottom-right).
 
 ### Shared Components
 
@@ -603,9 +689,12 @@ Pages use `AnimatePresence mode="wait"` for tab transitions. Each page is wrappe
 
 #### Sidebar.jsx
 - Navigation tabs with animated active indicator (`layoutId="sidebar-active"` spring animation).
-- Tabs: Home, Instalock, Map Dodge, Fake Status, Party, Match Info, Misc, Logs (conditional).
+- Tabs: Home, Instalock, Map Dodge, Fake Status, Party, Match Info, Misc, Logs (conditional), Dev (conditional).
 - Bottom section: Dodge button (appears during pregame), player info, refresh button, settings button.
-- Tab change is blocked if `fakeStatusUnsaved` is true and leaving the fake status tab.
+- Tab change intercepted by App.jsx — if `fakeStatusUnsaved` is true and leaving fake status, shows unsaved changes modal (Save & Apply / Discard / Cancel).
+
+#### Tooltip.jsx
+- Reusable hover tooltip component for showing contextual information on hover.
 
 #### PlayerInfo.jsx
 - Shows player card thumbnail (8x8 rounded), name#tag, connection status dot.
@@ -711,7 +800,8 @@ PD/GLZ:       Authorization: Bearer {access_token}
               X-Riot-Entitlements-JWT: {entitlements_jwt}
               X-Riot-ClientPlatform: {PLATFORM_BASE64}
               X-Riot-ClientVersion: {client_version}
-Henrik:       Authorization: {api_key}
+Splooshima:   Authorization: {api_key}
+VT Cloud:     (no auth required)
 ```
 
 ### Region/Shard
@@ -734,20 +824,25 @@ Henrik:       Authorization: {api_key}
 | `start_minimized` | `"true"/"false"` | App.jsx, SettingsPage | Start hidden in tray |
 | `minimize_to_tray` | `"true"/"false"` | App.jsx, SettingsPage | Minimize behavior |
 | `close_with_game` | `"true"/"false"` | App.jsx, SettingsPage | Exit when Valorant closes |
-| `dev_mode` | `"true"/"false"` | App.jsx, SettingsPage | Enable Ctrl+Shift+I |
+| `dev_tab_enabled` | `"true"/"false"` | App.jsx | Show Dev tab (set via `__VT_DEV()` in console) |
 | `disable_animations` | `"true"/"false"` | App.jsx, SettingsPage, all pages | Disable all animations |
 | `show_logs` | `"true"/"false"` | App.jsx, SettingsPage | Show Logs tab |
-| `henrik_api_key` | string | App.jsx, SettingsPage, MatchInfoPage | Henrik API key |
+| `splooshima_api_key` | string | App.jsx, SettingsPage, MatchInfoPage | Splooshima API key |
 | `instalock_select_delay` | number string | App.jsx, SettingsPage | Agent select delay (ms) |
 | `instalock_lock_delay` | number string | App.jsx, SettingsPage | Agent lock delay (ms) |
 | `auto_unqueue` | `"true"/"false"` | App.jsx, MiscPage | Auto leave queue after dodge |
 | `auto_requeue` | `"true"/"false"` | App.jsx, MiscPage | Auto requeue after match |
-| `instalock-config` | JSON | InstalockPage | `{ defaultAgent, perMap, active }` |
+| `notifications_enabled` | `"true"/"false"` | App.jsx, SettingsPage | Enable notification overlays |
+| `notification_position` | string | App.jsx, SettingsPage | Notification position (`top-right`, `top-left`, `bottom-right`, `bottom-left`) |
+| `notification_screen` | string | App.jsx, SettingsPage | Which monitor shows notifications (`game`, `primary`, or display index) |
+| `instalock-config` | JSON | InstalockPage | `{ profiles: [...], activeProfile, active }` |
 | `mapdodge-config` | JSON | MapDodgePage, App.jsx | `{ blacklist: [], active }` |
-| `fakestatus_config` | JSON | FakeStatusPage | Fake presence settings |
+| `fake-status-config` | JSON | FakeStatusPage | Fake presence settings |
+| `fakestatus_enabled` | `"true"/"false"` | FakeStatusPage | Auto-start XMPP on load |
 | `menu_video_config` | JSON | MiscPage, App.jsx (health check) | `{ backupPath, destPath, hash }` |
+| `skipped_update_version` | string | App.jsx | Version string of a skipped update |
 
-**Config export/import** (SettingsPage): Exports ALL localStorage as a `.valthing` JSON file. Import merges into existing localStorage and reloads the page.
+**Config export/import** (SettingsPage): Export as `.vt` JSON file or cloud share code. Import from file or share code. Reloads page after import. Supports theme and full config types.
 
 ---
 
@@ -775,12 +870,18 @@ https://media.valorant-api.com/maps/{uuid}/splash.png
 https://media.valorant-api.com/maps/{uuid}/listviewicon.png
 ```
 
-### Henrik API (requires API key)
+### Splooshima API (requires API key)
 
 | Endpoint | Used For |
 |----------|---------|
-| `/valorant/v1/by-puuid/account/{puuid}` | Account lookup by puuid |
-| `/valorant/v2/by-puuid/mmr/{region}/{puuid}` | MMR/rank data by puuid |
+| Various endpoints | Extended player info and account data |
+
+### VT Cloud API (`vt-cloud.ajaxfnc.com`, no auth)
+
+| Endpoint | Method | Used For |
+|----------|--------|---------|
+| `/save` | POST | Save share code data (profile, theme, config) |
+| `/load/{code}` | GET | Load data by share code |
 
 ### GitHub API (no auth)
 
@@ -816,6 +917,20 @@ https://media.valorant-api.com/maps/{uuid}/listviewicon.png
 2. Add `useEffect` for persistence: `localStorage.setItem("key", String(value))`.
 3. Pass as prop + onChange handler to `SettingsPage.jsx`.
 4. Add UI toggle/input in the appropriate settings section.
+
+### Frontend Utility Modules
+
+#### `cloud.js`
+DOM-only file operations (cannot be done in Rust):
+- `exportVtFile(type, data, filename)` — Creates a `.vt` JSON file download via Blob + anchor click.
+- `readVtFile(file)` — Reads a `.vt` file via FileReader, parses JSON, validates `type` + `data` fields.
+
+Cloud save/load (HTTP) is handled in Rust (`cloud.rs`), not JS.
+
+#### `matchCache.js`
+In-memory player data cache with 10-minute TTL for MatchInfoPage:
+- `getCached(puuid, key)` — Returns cached value or undefined if expired.
+- `setCache(puuid, key, value)` — Stores value with timestamp.
 
 ### UI Component Patterns
 

@@ -6,3 +6,4 @@ target/
 # val.md
 changelog.md
 *.js.map
+cloud-worker/

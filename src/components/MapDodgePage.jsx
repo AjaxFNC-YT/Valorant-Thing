@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 
 const EXCLUDED_MAPS = ["The Range", "Basic Training", "Skirmish A", "Skirmish B", "Skirmish C"];
+const DM_MAPS = new Set(["Kasbah", "Glitch", "Drift", "Piazza", "District"]);
 const CONFIG_KEY = "mapdodge-config";
 const noAnim = () => localStorage.getItem("disable_animations") === "true";
 const T0 = { duration: 0 };
@@ -140,17 +141,53 @@ export default function MapDodgePage({ onActiveChange, onBlacklistChange, connec
         <p className="text-text-secondary text-xs font-display tracking-wide mb-3">
           Click maps to blacklist — auto-dodge when matched
         </p>
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
-          {filteredMaps.map((map, i) => (
-            <motion.div key={map.uuid} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={noAnim() ? T0 : { duration: 0.15, delay: Math.min(i * 0.03, 0.3) }}>
-            <MapDodgeCard
-              map={map}
-              blacklisted={blacklist.has(map.mapUrl)}
-              onClick={() => toggleMap(map.mapUrl)}
-            />
-            </motion.div>
-          ))}
-        </div>
+        {(() => {
+          const standard = filteredMaps.filter(m => !DM_MAPS.has(m.displayName));
+          const dm = filteredMaps.filter(m => DM_MAPS.has(m.displayName));
+          let idx = 0;
+          return (
+            <div className="space-y-4">
+              {standard.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted/60"><path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3V7z" /><path d="M9 4v13M15 7v13" /></svg>
+                    <span className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider">Standard Maps</span>
+                    <div className="flex-1 h-px bg-border/50" />
+                  </div>
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
+                    {standard.map(map => {
+                      const i = idx++;
+                      return (
+                        <motion.div key={map.uuid} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={noAnim() ? T0 : { duration: 0.15, delay: Math.min(i * 0.03, 0.3) }}>
+                        <MapDodgeCard map={map} blacklisted={blacklist.has(map.mapUrl)} onClick={() => toggleMap(map.mapUrl)} />
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {dm.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted/60"><circle cx="12" cy="12" r="3" /><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" /></svg>
+                    <span className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider">Deathmatch Maps</span>
+                    <div className="flex-1 h-px bg-border/50" />
+                  </div>
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
+                    {dm.map(map => {
+                      const i = idx++;
+                      return (
+                        <motion.div key={map.uuid} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={noAnim() ? T0 : { duration: 0.15, delay: Math.min(i * 0.03, 0.3) }}>
+                        <MapDodgeCard map={map} blacklisted={blacklist.has(map.mapUrl)} onClick={() => toggleMap(map.mapUrl)} />
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

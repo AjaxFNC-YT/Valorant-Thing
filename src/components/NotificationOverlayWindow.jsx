@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { listen, emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import { motion, AnimatePresence } from "framer-motion";
 import NotificationToast from "./NotificationToast";
 
@@ -14,13 +15,12 @@ export default function NotificationOverlayWindow() {
     document.documentElement.style.background = "transparent";
     document.body.style.background = "transparent";
 
-    const applyTheme = (t) => {
-      document.documentElement.setAttribute("data-theme", t || "crimson-moon");
-      if (t === "custom") {
-        try {
-          const ct = JSON.parse(localStorage.getItem("custom_theme"));
-          if (ct?.vars) Object.entries(ct.vars).forEach(([k, v]) => document.documentElement.style.setProperty(k, v));
-        } catch {}
+    const applyTheme = (payload) => {
+      const name = typeof payload === "string" ? payload : payload?.name;
+      const vars = typeof payload === "object" ? payload?.vars : null;
+      document.documentElement.setAttribute("data-theme", name || "crimson-moon");
+      if (name === "custom" && vars) {
+        Object.entries(vars).forEach(([k, v]) => document.documentElement.style.setProperty(k, v));
       }
     };
     applyTheme(localStorage.getItem("app_theme"));
@@ -34,7 +34,7 @@ export default function NotificationOverlayWindow() {
       unsubs.push(await listen("notif-push", async (e) => {
         const data = e.payload;
         if (hideTimer.current) { clearTimeout(hideTimer.current); hideTimer.current = null; }
-        try { await getCurrentWindow().show(); } catch {}
+        try { await invoke("show_window_no_focus", { label: "notification-overlay" }); } catch {}
         if (data.position) setPosition(data.position);
         setNotifications(prev => {
           const idx = prev.findIndex(n => n.id === data.id);

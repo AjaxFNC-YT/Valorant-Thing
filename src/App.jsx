@@ -16,6 +16,7 @@ import PartyPage from "./components/PartyPage";
 import MiscPage from "./components/MiscPage";
 import FakeStatusPage from "./components/FakeStatusPage";
 import ChatPage from "./components/ChatPage";
+import DevPage from "./components/DevPage";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { emitTo } from "@tauri-apps/api/event";
 import { register, unregister, isRegistered } from "@tauri-apps/plugin-global-shortcut";
@@ -79,6 +80,16 @@ function deriveCustomVars(ct) {
   };
 }
 
+function buildNotifThemePayload() {
+  const name = localStorage.getItem("app_theme") || "crimson-moon";
+  if (name !== "custom") return { name };
+  try {
+    const ct = JSON.parse(localStorage.getItem("custom_theme"));
+    const vars = ct?.vars || deriveCustomVars(ct);
+    return { name, vars };
+  } catch { return { name }; }
+}
+
 function buildGradientCSS(ct) {
   const stops = [...ct.stops].sort((a, b) => a.pos - b.pos);
   return `linear-gradient(${ct.angle}deg, ${stops.map(s => `${s.color} ${s.pos}%`).join(", ")})`;
@@ -126,6 +137,7 @@ export default function App() {
   const [player, setPlayer] = useState(null);
   const [activeTab, setActiveTab] = useState("home");
   const [showLogs, setShowLogs] = useState(() => localStorage.getItem("show_logs") === "true");
+  const [devTab, setDevTab] = useState(() => localStorage.getItem("dev_tab_enabled") === "true");
   const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem("app_theme");
     if (!saved || saved === "default") return "crimson-moon";
@@ -141,7 +153,6 @@ export default function App() {
   const [startMinimized, setStartMinimized] = useState(() => localStorage.getItem("start_minimized") === "true");
   const [minimizeToTray, setMinimizeToTray] = useState(() => localStorage.getItem("minimize_to_tray") === "true");
   const [closeWithGame, setCloseWithGame] = useState(() => localStorage.getItem("close_with_game") === "true");
-  const [devMode, setDevMode] = useState(() => localStorage.getItem("dev_mode") === "true");
   const [disableAnimations, setDisableAnimations] = useState(() => localStorage.getItem("disable_animations") === "true");
   const [nodeInstalled, setNodeInstalled] = useState(true);
   const [updateInfo, setUpdateInfo] = useState(null);
@@ -149,6 +160,8 @@ export default function App() {
   const [updating, setUpdating] = useState(false);
   const [showOlderReleases, setShowOlderReleases] = useState(false);
   const [fakeStatusUnsaved, setFakeStatusUnsaved] = useState(false);
+  const [unsavedModal, setUnsavedModal] = useState(null);
+  const fakeStatusActionRef = useRef(null);
   const [logs, setLogs] = useState([]);
   const [instalockActive, setInstalockActive] = useState(() => {
     try {
@@ -167,6 +180,7 @@ export default function App() {
   });
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => localStorage.getItem("notifications_enabled") !== "false");
   const [notificationPosition, setNotificationPosition] = useState(() => localStorage.getItem("notification_position") || "top-right");
+  const [notificationScreen, setNotificationScreen] = useState(() => localStorage.getItem("notification_screen") || "game");
   const [pregameMatchId, setPregameMatchId] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [autoUnqueue, setAutoUnqueue] = useState(() => localStorage.getItem("auto_unqueue") === "true");
@@ -284,8 +298,6 @@ export default function App() {
   }, [closeWithGame, status]);
 
   useEffect(() => {
-    localStorage.setItem("dev_mode", String(devMode));
-    if (!devMode) return;
     const handler = (e) => {
       if (e.ctrlKey && e.shiftKey && e.key === "I") {
         e.preventDefault();
@@ -293,8 +305,14 @@ export default function App() {
       }
     };
     window.addEventListener("keydown", handler);
+    window.__VT_DEV = (on) => {
+      const val = on === undefined ? localStorage.getItem("dev_tab_enabled") !== "true" : !!on;
+      localStorage.setItem("dev_tab_enabled", String(val));
+      setDevTab(val);
+      console.log(`[VT] Dev tab ${val ? "enabled" : "disabled"}`);
+    };
     return () => window.removeEventListener("keydown", handler);
-  }, [devMode]);
+  }, []);
 
   useEffect(() => { mapDodgeActiveRef.current = mapDodgeActive; }, [mapDodgeActive]);
   useEffect(() => { autoUnqueueRef.current = autoUnqueue; localStorage.setItem("auto_unqueue", String(autoUnqueue)); }, [autoUnqueue]);
@@ -798,8 +816,7 @@ export default function App() {
       pendingNotifsRef.current = [];
       addLog("info", `[Notif] Overlay ready, flushing ${queue.length} queued`);
       if (queue.length > 0 && notifWindowRef.current) {
-        const t = localStorage.getItem("app_theme") || "crimson-moon";
-        emitTo("notification-overlay", "notif-theme", t).catch(() => {});
+        emitTo("notification-overlay", "notif-theme", buildNotifThemePayload()).catch(() => {});
         for (const n of queue) {
           emitTo("notification-overlay", "notif-push", n).catch(() => {});
         }
@@ -813,8 +830,7 @@ export default function App() {
     const payload = { ...data, position: pos };
 
     if (notifWindowRef.current && overlayReadyRef.current) {
-      const t = localStorage.getItem("app_theme") || "crimson-moon";
-      emitTo("notification-overlay", "notif-theme", t).catch(() => {});
+      emitTo("notification-overlay", "notif-theme", buildNotifThemePayload()).catch(() => {});
       emitTo("notification-overlay", "notif-push", payload)
         .then(() => addLog("info", `[Notif] Pushed ${data.type} to overlay`))
         .catch((e) => addLog("error", `[Notif] Push failed: ${e}`));
@@ -836,8 +852,7 @@ export default function App() {
         if (existing) {
           notifWindowRef.current = existing;
           overlayReadyRef.current = true;
-          const t = localStorage.getItem("app_theme") || "crimson-moon";
-          emitTo("notification-overlay", "notif-theme", t).catch(() => {});
+          emitTo("notification-overlay", "notif-theme", buildNotifThemePayload()).catch(() => {});
           const q = pendingNotifsRef.current; pendingNotifsRef.current = [];
           for (const n of q) emitTo("notification-overlay", "notif-push", n).catch(() => {});
           return;
@@ -845,21 +860,37 @@ export default function App() {
       } catch {}
 
       const NOTIF_W = 340, NOTIF_H = 500, MARGIN = 16;
-      let winX = 0, winY = 0;
       const p = localStorage.getItem("notification_position") || "top-right";
+      const screenPref = localStorage.getItem("notification_screen") || "game";
+      let mon = null;
       try {
-        const raw = await invoke("get_valorant_monitor");
-        const mon = JSON.parse(raw);
-        const isRight = p.includes("right");
-        const isBottom = p.includes("bottom");
-        winX = isRight ? mon.x + mon.width - NOTIF_W - MARGIN : mon.x + MARGIN;
-        winY = isBottom ? mon.y + mon.height - NOTIF_H - MARGIN : mon.y + MARGIN;
-      } catch {
-        const isRight = p.includes("right");
-        const isBottom = p.includes("bottom");
-        winX = isRight ? screen.width - NOTIF_W - MARGIN : MARGIN;
-        winY = isBottom ? screen.height - NOTIF_H - MARGIN : MARGIN;
-      }
+        if (screenPref === "game") {
+          const raw = await invoke("get_valorant_monitor");
+          mon = JSON.parse(raw);
+        } else if (screenPref === "app") {
+          const raw = await invoke("get_valorant_monitor").catch(() => null);
+          if (!raw) {
+            mon = { x: 0, y: 0, width: screen.width, height: screen.height };
+          } else {
+            mon = JSON.parse(raw);
+          }
+          try {
+            const m = await getCurrentWindow().currentMonitor();
+            if (m) mon = { x: m.position.x, y: m.position.y, width: m.size.width, height: m.size.height };
+          } catch {}
+        } else if (screenPref.startsWith("monitor:")) {
+          const idx = parseInt(screenPref.split(":")[1], 10);
+          const raw = await invoke("list_monitors");
+          const list = JSON.parse(raw);
+          const m = list[idx];
+          if (m) mon = { x: m.x, y: m.y, width: m.width, height: m.height };
+        }
+      } catch {}
+      if (!mon) mon = { x: 0, y: 0, width: screen.width, height: screen.height };
+      const isRight = p.includes("right");
+      const isBottom = p.includes("bottom");
+      const winX = isRight ? mon.x + mon.width - NOTIF_W - MARGIN : mon.x + MARGIN;
+      const winY = isBottom ? mon.y + mon.height - NOTIF_H - MARGIN : mon.y + MARGIN;
 
       const win = new WebviewWindow("notification-overlay", {
         url: "index.html?notification",
@@ -1134,8 +1165,9 @@ export default function App() {
           player={player}
           onReconnect={handleRefreshClick}
           activeTab={activeTab}
-          onTabChange={(tab) => { if (fakeStatusUnsaved && activeTab === "fakestatus" && tab !== "fakestatus") return; setActiveTab(tab); }}
+          onTabChange={(tab) => { if (fakeStatusUnsaved && activeTab === "fakestatus" && tab !== "fakestatus") { setUnsavedModal(tab); return; } setActiveTab(tab); }}
           showLogs={showLogs}
+          devTab={devTab}
           pregameMatchId={pregameMatchId}
           onDodge={handleDodge}
           simplifiedTheme={simplifiedTheme}
@@ -1204,8 +1236,6 @@ export default function App() {
               onDiscordRpcChange={setDiscordRpc}
               closeWithGame={closeWithGame}
               onCloseWithGameChange={(v) => { setCloseWithGame(v); localStorage.setItem("close_with_game", String(v)); }}
-              devMode={devMode}
-              onDevModeChange={setDevMode}
               disableAnimations={disableAnimations}
               onDisableAnimationsChange={setDisableAnimations}
               updateInfo={updateInfo}
@@ -1213,7 +1243,9 @@ export default function App() {
               notificationsEnabled={notificationsEnabled}
               onNotificationsEnabledChange={(v) => { setNotificationsEnabled(v); localStorage.setItem("notifications_enabled", String(v)); }}
               notificationPosition={notificationPosition}
-              onNotificationPositionChange={(v) => { setNotificationPosition(v); localStorage.setItem("notification_position", v); }}
+              onNotificationPositionChange={(v) => { setNotificationPosition(v); localStorage.setItem("notification_position", v); if (notifWindowRef.current) { try { notifWindowRef.current.destroy(); } catch {} notifWindowRef.current = null; overlayReadyRef.current = false; creatingWindowRef.current = false; } }}
+              notificationScreen={notificationScreen}
+              onNotificationScreenChange={(v) => { setNotificationScreen(v); localStorage.setItem("notification_screen", v); if (notifWindowRef.current) { try { notifWindowRef.current.destroy(); } catch {} notifWindowRef.current = null; overlayReadyRef.current = false; creatingWindowRef.current = false; } }}
               // overlayEnabled={overlayEnabled}
               // onOverlayEnabledChange={setOverlayEnabled}
               // overlayLinger={overlayLinger}
@@ -1250,9 +1282,14 @@ export default function App() {
             <LogsPage logs={logs} onClear={() => setLogs([])} />
             </motion.div>
           )}
+          {activeTab === "dev" && devTab && (
+            <motion.div key="dev" className="flex-1 flex min-h-0" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15, ease: "easeOut" }}>
+            <DevPage logs={logs} pushNotification={pushNotification} addLog={addLog} onClearLogs={() => setLogs([])} />
+            </motion.div>
+          )}
           </AnimatePresence>
           <div className={`absolute inset-0 flex min-h-0 ${activeTab === "fakestatus" ? "" : "hidden"}`}>
-            <FakeStatusPage connected={status === "connected"} showLogsSetting={showLogs} onUnsavedChange={setFakeStatusUnsaved} />
+            <FakeStatusPage connected={status === "connected"} showLogsSetting={showLogs} onUnsavedChange={setFakeStatusUnsaved} actionRef={fakeStatusActionRef} />
           </div>
         </main>
       </div>
@@ -1306,6 +1343,66 @@ export default function App() {
                 className="flex-1 py-1.5 rounded-lg bg-val-red hover:bg-val-red/80 text-white text-xs font-display font-semibold transition-colors"
               >
                 Refresh
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+      </AnimatePresence>
+      <AnimatePresence>
+      {unsavedModal && (
+        <motion.div
+          key="unsaved-overlay"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm rounded-xl"
+          onClick={() => setUnsavedModal(null)}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 8 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+            className="bg-base-700 border border-border rounded-xl p-5 w-80 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-8 h-8 rounded-lg bg-val-red/15 flex items-center justify-center">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-val-red">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+              </div>
+              <h3 className="text-sm font-display font-semibold text-text-primary">Unsaved Changes</h3>
+            </div>
+            <p className="text-xs font-body text-text-secondary leading-relaxed mb-4">
+              You have unsaved changes in Fake Status. What would you like to do?
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  fakeStatusActionRef.current?.discard();
+                  const tab = unsavedModal;
+                  setUnsavedModal(null);
+                  setActiveTab(tab);
+                }}
+                className="flex-1 py-1.5 rounded-lg bg-base-600 hover:bg-base-500 text-text-secondary text-xs font-display font-medium transition-colors"
+              >
+                Discard
+              </button>
+              <button
+                onClick={() => {
+                  fakeStatusActionRef.current?.save();
+                  const tab = unsavedModal;
+                  setUnsavedModal(null);
+                  setActiveTab(tab);
+                }}
+                className="flex-1 py-1.5 rounded-lg bg-val-red hover:bg-val-red/80 text-white text-xs font-display font-semibold transition-colors"
+              >
+                Save & Apply
               </button>
             </div>
           </motion.div>

@@ -1,6 +1,6 @@
 [package]
 name = "valorant-app"
-version = "1.7.2"
+version = "1.8.0"
 edition = "2021"
 
 [lib]
@@ -24,3 +24,5 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 native-tls = "0.2"
 tauri-plugin-global-shortcut = "2"
+reqwest = { version = "0.12", features = ["json", "native-tls"] }
+tokio = { version = "1", features = ["full"] }

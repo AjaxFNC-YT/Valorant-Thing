@@ -239,7 +239,7 @@ function ApiSearch({ value, onChange, endpoint, nameKey, iconKey, placeholder })
 }
 
 
-export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedChange }) {
+export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedChange, actionRef }) {
   const [xmppStatus, setXmppStatus] = useState(null);
   const [active, setActive] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -293,6 +293,18 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
   const update = (key, val) => setPresence(p => ({ ...p, [key]: val }));
   presenceRef.current = presence;
   savedPresenceRef.current = savedPresence;
+
+  useEffect(() => {
+    if (actionRef) {
+      actionRef.current = {
+        save: () => {
+          setSavedPresence(presenceRef.current);
+          if (xmppStatus?.connected) sendPresence(presenceRef.current).catch(() => {});
+        },
+        discard: () => setPresence(savedPresenceRef.current),
+      };
+    }
+  });
 
   useEffect(() => {
     if (onUnsavedChange) onUnsavedChange(hasUnsaved);
@@ -504,6 +516,25 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
           <h2 className="text-sm font-display font-semibold text-text-primary">Fake Status</h2>
         </div>
         <div className="flex items-center gap-2">
+          {hasUnsaved && !showLogs && (
+            <>
+              <button
+                onClick={() => setPresence(savedPresence)}
+                className="px-2.5 py-1 rounded-lg border border-border text-[10px] font-display font-medium text-text-muted hover:text-text-primary transition-colors"
+              >
+                Reset
+              </button>
+              <button
+                onClick={() => {
+                  setSavedPresence(presence);
+                  if (xmppStatus?.connected) sendPresence(presence).catch(() => {});
+                }}
+                className="px-2.5 py-1 rounded-lg border border-val-red/40 text-[10px] font-display font-semibold text-val-red hover:bg-val-red/10 transition-colors"
+              >
+                Save & Apply
+              </button>
+            </>
+          )}
           {showLogsSetting && (
             <button onClick={() => { setShowLogs(v => !v); if (!showLogs) fetchLogs(); }}
               className={`px-2.5 py-1.5 rounded-lg border text-xs font-display font-semibold transition-colors ${showLogs ? "bg-accent-blue/15 border-accent-blue/30 text-accent-blue" : "bg-base-600 border-border text-text-muted hover:text-text-secondary"}`}
@@ -651,32 +682,6 @@ export default function FakeStatusPage({ connected, showLogsSetting, onUnsavedCh
         </div>
       )}
 
-      {hasUnsaved && !showLogs && (
-        <div className="absolute bottom-3 left-4 right-4 z-10">
-          <div className="flex items-center justify-between p-3 rounded-xl bg-base-600/95 backdrop-blur-sm border border-border shadow-lg">
-            <p className="text-xs font-body text-text-muted">You have unsaved changes</p>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPresence(savedPresence)}
-                className="px-3 py-1.5 rounded-lg border border-border text-xs font-display font-medium text-text-muted hover:text-text-primary hover:border-text-muted/40 transition-colors bg-transparent"
-              >
-                Reset
-              </button>
-              <button
-                onClick={() => {
-                  setSavedPresence(presence);
-                  if (xmppStatus?.connected) {
-                    sendPresence(presence).catch(() => {});
-                  }
-                }}
-                className="px-3 py-1.5 rounded-lg border border-val-red/40 text-xs font-display font-semibold text-val-red hover:bg-val-red/10 transition-colors bg-transparent"
-              >
-                Save & Apply
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
     </>
   );

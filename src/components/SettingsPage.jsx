@@ -3,8 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { HexColorPicker, HexColorInput } from "react-colorful";
 import { motion } from "framer-motion";
 import { open } from "@tauri-apps/plugin-shell";
-import { save } from "@tauri-apps/plugin-dialog";
-import { writeTextFile } from "@tauri-apps/plugin-fs";
+import { exportVtFile, readVtFile } from "../cloud";
 
 const noAnim = () => localStorage.getItem("disable_animations") === "true";
 const T0 = { duration: 0 };
@@ -208,11 +207,14 @@ function buildPreviewGradient(ct) {
 const CONFIG_KEYS = [
   "show_logs", "app_theme", "simplified_theme", "custom_theme",
   "discord_rpc", "start_with_windows", "start_minimized", "minimize_to_tray",
+  "close_with_game", "disable_animations",
   "splooshima_api_key", "mapdodge-config", "auto_unqueue", "auto_requeue",
   "instalock_select_delay", "instalock_lock_delay", "instalock-config",
-  "fake-status-config", "overlay_enabled", "overlay_linger",
-  "notifications_enabled", "notification_position", "dodge_keybind", "dodge_keybind_enabled",
+  "fake-status-config", "fakestatus_enabled", "overlay_enabled", "overlay_linger",
+  "notifications_enabled", "notification_position", "notification_screen",
+  "dodge_keybind", "dodge_keybind_enabled",
   "instalock-profiles", "instalock-active-profile",
+  "dev_tab_enabled",
 ];
 
 export default function SettingsPage({
@@ -228,81 +230,138 @@ export default function SettingsPage({
   customTheme, onCustomThemeChange,
   discordRpc, onDiscordRpcChange,
   closeWithGame, onCloseWithGameChange,
-  devMode, onDevModeChange,
   disableAnimations, onDisableAnimationsChange,
   updateInfo, onShowUpdate,
   overlayEnabled, onOverlayEnabledChange,
   overlayLinger, onOverlayLingerChange,
   notificationsEnabled, onNotificationsEnabledChange,
   notificationPosition, onNotificationPositionChange,
+  notificationScreen, onNotificationScreenChange,
 }) {
   const fileRef = useRef(null);
   const configFileRef = useRef(null);
+  const themeVtRef = useRef(null);
+  const configVtRef = useRef(null);
   const [presetOpen, setPresetOpen] = useState(false);
   const [appVersion, setAppVersion] = useState("...");
+  const [monitors, setMonitors] = useState([]);
+  const [shareModal, setShareModal] = useState(null);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [importCodeModal, setImportCodeModal] = useState(null);
+  const [importCodeValue, setImportCodeValue] = useState("");
+  const [importCodeError, setImportCodeError] = useState("");
 
   useEffect(() => { invoke("get_app_version").then(setAppVersion).catch(() => {}); }, []);
 
-  const exportTheme = () => {
-    const blob = new Blob([JSON.stringify(customTheme, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "custom.theme";
-    a.click();
-    URL.revokeObjectURL(url);
+  useEffect(() => {
+    if (!notificationsEnabled || !notificationScreen?.startsWith("monitor:")) return;
+    invoke("list_monitors").then((raw) => {
+      const list = JSON.parse(raw);
+      setMonitors(list.map((m, i) => ({
+        index: i, width: m.width, height: m.height, hz: m.hz, primary: m.primary,
+        label: `Display ${i + 1}  ${m.width}x${m.height}${m.hz ? `@${m.hz}hz` : ""}${m.primary ? "  [PRIMARY]" : ""}`,
+      })));
+    }).catch((e) => console.error("[monitors]", e));
+  }, [notificationsEnabled, notificationScreen]);
+
+  const shareThemeCode = async () => {
+    setShareLoading(true);
+    setShareModal(null);
+    try {
+      const code = await invoke("cloud_save", { saveType: "theme", data: customTheme });
+      navigator.clipboard.writeText(code);
+      setShareModal({ code, copied: true });
+    } catch (e) {
+      setShareModal({ error: e.message });
+    } finally {
+      setShareLoading(false);
+    }
   };
 
-  const importTheme = (e) => {
+  const exportThemeFile = () => exportVtFile("theme", customTheme, "custom-theme.vt");
+
+  const importThemeVt = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = JSON.parse(ev.target.result);
-        if (data.accent && data.stops?.length >= 2 && typeof data.angle === "number") {
-          onCustomThemeChange(data);
-          onThemeChange("custom");
-        }
-      } catch {}
-    };
-    reader.readAsText(file);
+    try {
+      const vt = await readVtFile(file);
+      if (vt.type !== "theme") return;
+      const d = vt.data;
+      if (d.accent && d.stops?.length >= 2 && typeof d.angle === "number") {
+        onCustomThemeChange(d);
+        onThemeChange("custom");
+      }
+    } catch {}
     e.target.value = "";
   };
 
-  const exportConfig = async () => {
+  const shareConfigCode = async () => {
     const config = {};
     for (const key of CONFIG_KEYS) {
       const val = localStorage.getItem(key);
       if (val !== null) config[key] = val;
     }
+    setShareLoading(true);
+    setShareModal(null);
     try {
-      const path = await save({
-        defaultPath: "config.valthing",
-        filters: [{ name: "Valorant Thing Config", extensions: ["valthing"] }],
-      });
-      if (!path) return;
-      await writeTextFile(path, JSON.stringify(config, null, 2));
+      const code = await invoke("cloud_save", { saveType: "config", data: config });
+      navigator.clipboard.writeText(code);
+      setShareModal({ code, copied: true });
     } catch (e) {
-      console.error("Export failed:", e);
+      setShareModal({ error: e.message });
+    } finally {
+      setShareLoading(false);
     }
   };
 
-  const importConfig = (e) => {
+  const exportConfigFile = () => {
+    const config = {};
+    for (const key of CONFIG_KEYS) {
+      const val = localStorage.getItem(key);
+      if (val !== null) config[key] = val;
+    }
+    exportVtFile("config", config, "config.vt");
+  };
+
+  const importConfigVt = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = JSON.parse(ev.target.result);
+    try {
+      const vt = await readVtFile(file);
+      if (vt.type !== "config") return;
+      for (const key of CONFIG_KEYS) {
+        if (key in vt.data) localStorage.setItem(key, vt.data[key]);
+      }
+      window.location.reload();
+    } catch {}
+    e.target.value = "";
+  };
+
+  const handleImportCode = async () => {
+    const val = importCodeValue.trim().toUpperCase();
+    if (!val) return;
+    setImportCodeError("");
+    try {
+      const result = await invoke("cloud_load", { code: val });
+      if (result.type === "theme") {
+        const d = result.data;
+        if (d.accent && d.stops?.length >= 2 && typeof d.angle === "number") {
+          onCustomThemeChange(d);
+          onThemeChange("custom");
+        }
+        setImportCodeModal(null);
+        setImportCodeValue("");
+      } else if (result.type === "config") {
         for (const key of CONFIG_KEYS) {
-          if (key in data) localStorage.setItem(key, data[key]);
+          if (key in result.data) localStorage.setItem(key, result.data[key]);
         }
         window.location.reload();
-      } catch {}
-    };
-    reader.readAsText(file);
-    e.target.value = "";
+      } else {
+        setImportCodeError(`Unexpected type: ${result.type}`);
+      }
+    } catch (e) {
+      setImportCodeError(e.message);
+    }
   };
 
   const clearVarsAndUpdate = (patch) => {
@@ -355,54 +414,98 @@ export default function SettingsPage({
           </button>
         </motion.div>
       )}
-      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
-        <div className="flex items-center gap-2">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted">
-            <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
-            <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
-          </svg>
-          <h2 className="text-sm font-display font-semibold text-text-primary">Splooshima API Key</h2>
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="rounded-xl bg-base-700 border border-border divide-y divide-border">
+        <div className="px-4 pt-3 pb-1">
+          <h2 className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider">Splooshima API</h2>
         </div>
-        <p className="text-xs font-body text-text-muted">
-          Fallback for player names, levels, and viewing rank information. The app attempts to resolve it itself, and Splooshima is used if that fails.
-        </p>
-        <input
-          type="password"
-          value={splooshimaApiKey}
-          onChange={(e) => onSplooshimaApiKeyChange(e.target.value)}
-          placeholder="Your Splooshima API key"
-          className="w-full px-3 py-2 bg-base-600 border border-border rounded-lg text-xs font-body text-text-primary placeholder:text-text-muted/50 outline-none focus:border-val-red/60 transition-colors"
-        />
-        <button
-          onClick={() => open("https://splooshima.com")}
-          className="inline-flex items-center gap-1 text-xs font-body text-val-red hover:text-val-red/80 transition-colors"
-        >
-          Get API key
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" />
-          </svg>
-        </button>
-      </motion.div>
-
-      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
-        <h2 className="text-sm font-display font-semibold text-text-primary">Timing</h2>
-        <DelaySlider label="Select Delay" desc="Delay before selecting agent" value={selectDelay} onChange={onSelectDelayChange} />
-        <DelaySlider label="Lock Delay" desc="Delay between select and lock" value={lockDelay} onChange={onLockDelayChange} />
-      </motion.div>
-
-      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted">
-              <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" />
-              <path d="M13.73 21a2 2 0 01-3.46 0" />
+        <div className="p-4 space-y-3">
+          <p className="text-xs font-body text-text-muted">
+            Fallback for player names, levels, and viewing rank information. The app attempts to resolve it itself, and Splooshima is used if that fails.
+          </p>
+          <input
+            type="password"
+            value={splooshimaApiKey}
+            onChange={(e) => onSplooshimaApiKeyChange(e.target.value)}
+            placeholder="Your Splooshima API key"
+            className="w-full px-3 py-2 bg-base-600 border border-border rounded-lg text-xs font-body text-text-primary placeholder:text-text-muted/50 outline-none focus:border-val-red/60 transition-colors"
+          />
+          <button
+            onClick={() => open("https://splooshima.com")}
+            className="inline-flex items-center gap-1 text-xs font-body text-val-red hover:text-val-red/80 transition-colors"
+          >
+            Get API key
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" />
             </svg>
-            <h2 className="text-sm font-display font-semibold text-text-primary">Notifications</h2>
+          </button>
+        </div>
+      </motion.div>
+
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="rounded-xl bg-base-700 border border-border divide-y divide-border">
+        <div className="px-4 pt-3 pb-1">
+          <h2 className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider">Timing</h2>
+        </div>
+        <div className="p-4 space-y-4">
+          <DelaySlider label="Select Delay" desc="Delay before selecting agent" value={selectDelay} onChange={onSelectDelayChange} />
+          <DelaySlider label="Lock Delay" desc="Delay between select and lock" value={lockDelay} onChange={onLockDelayChange} />
+        </div>
+      </motion.div>
+
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="rounded-xl bg-base-700 border border-border divide-y divide-border">
+        <div className="px-4 pt-3 pb-1">
+          <h2 className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider">Notifications</h2>
+        </div>
+        <div className="flex items-center justify-between p-4">
+          <div>
+            <p className="text-sm font-display font-medium text-text-primary">Enabled</p>
+            <p className="text-xs font-body text-text-muted mt-0.5">Show in-game notification toasts</p>
           </div>
           <Toggle enabled={notificationsEnabled} onChange={onNotificationsEnabledChange} />
         </div>
         {notificationsEnabled && (
-          <div className="space-y-3">
+          <div className="p-4 space-y-3">
+            <div className="space-y-2">
+              <p className="text-xs font-body text-text-muted">Display on</p>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  { value: "game", label: "Game Screen", tip: "Notifications appear on whichever monitor Valorant is running on" },
+                  { value: "app", label: "App Screen", tip: "Notifications appear on whichever monitor this app is on" },
+                  { value: "custom", label: "Custom", tip: "Pick a specific monitor" },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => onNotificationScreenChange(opt.value === "custom" ? `monitor:${notificationScreen.startsWith("monitor:") ? notificationScreen.split(":")[1] : "0"}` : opt.value)}
+                    className={`group relative flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-body transition-colors ${
+                      (opt.value === "custom" ? notificationScreen.startsWith("monitor:") : notificationScreen === opt.value)
+                        ? "bg-val-red/20 border border-val-red/40 text-val-red font-semibold"
+                        : "bg-base-600 border border-border text-text-secondary hover:text-text-primary hover:bg-base-500"
+                    }`}
+                  >
+                    {opt.label}
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 opacity-40 group-hover:opacity-70 transition-opacity"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 rounded-lg bg-base-800 border border-border text-[10px] text-text-secondary whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-50 shadow-lg">
+                      {opt.tip}
+                    </div>
+                  </button>
+                ))}
+              </div>
+              {notificationScreen.startsWith("monitor:") && monitors.length > 0 && (
+                <div className="relative pt-1">
+                  <select
+                    value={notificationScreen}
+                    onChange={(e) => onNotificationScreenChange(e.target.value)}
+                    className="w-full appearance-none bg-base-600 border border-border rounded-lg px-3 py-2 text-xs font-body text-text-primary focus:outline-none focus:border-val-red/50 cursor-pointer"
+                  >
+                    {monitors.map((m) => (
+                      <option key={m.index} value={`monitor:${m.index}`}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="absolute right-3 top-1/2 translate-y-px pointer-events-none text-text-muted"><path d="M6 9l6 6 6-6"/></svg>
+                </div>
+              )}
+            </div>
             <div className="space-y-2">
               <p className="text-xs font-body text-text-muted">Position on screen</p>
               <div className="grid grid-cols-2 gap-1.5">
@@ -523,17 +626,13 @@ export default function SettingsPage({
           </div>
           <Toggle enabled={showLogs} onChange={onShowLogsChange} />
         </div>
-        <div className="flex items-center justify-between p-4">
-          <div>
-            <p className="text-sm font-display font-medium text-text-primary">Developer Mode</p>
-            <p className="text-xs font-body text-text-muted mt-0.5">Enable inspect element (Ctrl+Shift+I)</p>
-          </div>
-          <Toggle enabled={devMode} onChange={onDevModeChange} />
-        </div>
       </motion.div>
 
-      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
-        <h2 className="text-sm font-display font-semibold text-text-primary">Theme</h2>
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="rounded-xl bg-base-700 border border-border divide-y divide-border">
+        <div className="px-4 pt-3 pb-1">
+          <h2 className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider">Theme</h2>
+        </div>
+        <div className="p-4 space-y-3">
         <div className="grid grid-cols-4 gap-2">
           {THEMES.map((t) => (
             <button
@@ -671,25 +770,39 @@ export default function SettingsPage({
                 )}
               </div>
               <button
-                onClick={exportTheme}
+                onClick={shareThemeCode}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-base-600 border border-border text-xs font-body text-text-primary hover:bg-base-500 transition-colors"
               >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
-                Export
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                Share Code
               </button>
               <button
-                onClick={() => fileRef.current?.click()}
+                onClick={() => { setImportCodeModal("theme"); setImportCodeValue(""); setImportCodeError(""); }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-base-600 border border-border text-xs font-body text-text-primary hover:bg-base-500 transition-colors"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>
-                Import
+                Import Code
               </button>
-              <input ref={fileRef} type="file" accept=".theme,.json" onChange={importTheme} className="hidden" />
+              <button
+                onClick={exportThemeFile}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-base-600 border border-border text-xs font-body text-text-primary hover:bg-base-500 transition-colors"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+                Export .vt
+              </button>
+              <button
+                onClick={() => themeVtRef.current?.click()}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-base-600 border border-border text-xs font-body text-text-primary hover:bg-base-500 transition-colors"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>
+                Import .vt
+              </button>
+              <input ref={themeVtRef} type="file" accept=".vt,.theme,.json" onChange={importThemeVt} className="hidden" />
             </div>
           </div>
         )}
-
-        <div className="flex items-center justify-between pt-2 border-t border-border">
+        </div>
+        <div className="flex items-center justify-between p-4">
           <div>
             <p className="text-sm font-display font-medium text-text-primary">Simplified</p>
             <p className="text-xs font-body text-text-muted mt-0.5">Flat colors instead of gradient background</p>
@@ -698,35 +811,115 @@ export default function SettingsPage({
         </div>
       </motion.div>
 
-      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-3">
-        <h2 className="text-sm font-display font-semibold text-text-primary">Config</h2>
-        <p className="text-xs font-body text-text-muted">Export or import your entire configuration including agents, maps, theme, and all settings.</p>
-        <div className="flex items-center gap-2">
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="rounded-xl bg-base-700 border border-border divide-y divide-border">
+        <div className="px-4 pt-3 pb-1">
+          <h2 className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider">Config</h2>
+        </div>
+        <div className="p-4 space-y-3">
+          <p className="text-xs font-body text-text-muted">Share, export, or import your entire configuration including agents, maps, theme, and all settings.</p>
+          <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={exportConfig}
+            onClick={shareConfigCode}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-base-600 border border-border text-xs font-body text-text-primary hover:bg-base-500 transition-colors"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
-            Export Config
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+            Share Code
           </button>
           <button
-            onClick={() => configFileRef.current?.click()}
+            onClick={() => { setImportCodeModal("config"); setImportCodeValue(""); setImportCodeError(""); }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-base-600 border border-border text-xs font-body text-text-primary hover:bg-base-500 transition-colors"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>
-            Import Config
+            Import Code
           </button>
-          <input ref={configFileRef} type="file" accept=".valthing" onChange={importConfig} className="hidden" />
+          <button
+            onClick={exportConfigFile}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-base-600 border border-border text-xs font-body text-text-primary hover:bg-base-500 transition-colors"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+            Export .vt
+          </button>
+          <button
+            onClick={() => configVtRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-base-600 border border-border text-xs font-body text-text-primary hover:bg-base-500 transition-colors"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>
+            Import .vt
+          </button>
+          <input ref={configVtRef} type="file" accept=".vt,.valthing" onChange={importConfigVt} className="hidden" />
+          </div>
         </div>
       </motion.div>
 
-      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-1">
-        <h2 className="text-sm font-display font-semibold text-text-primary">About</h2>
-        <p className="text-xs font-body text-text-secondary">Valorant Thing v{appVersion}</p>
-        <p className="text-xs font-body text-text-muted">
-          Created by AjaxFNC · Built with Rust & Tauri · Uses official Valorant APIs
-        </p>
+      <motion.div variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }} transition={noAnim() ? T0 : { duration: 0.2 }} className="rounded-xl bg-base-700 border border-border divide-y divide-border">
+        <div className="px-4 pt-3 pb-1">
+          <h2 className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider">About</h2>
+        </div>
+        <div className="p-4 space-y-1">
+          <p className="text-xs font-body text-text-secondary">Valorant Thing v{appVersion}</p>
+          <p className="text-xs font-body text-text-muted">
+            Created by AjaxFNC · Built with Rust & Tauri · Uses official Valorant APIs
+          </p>
+        </div>
       </motion.div>
+
+      {(shareModal || shareLoading) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => { setShareModal(null); setShareLoading(false); }}>
+          <div className="bg-base-700 border border-border rounded-xl p-5 max-w-xs w-full space-y-3 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent-blue shrink-0"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+              <p className="text-sm font-display font-semibold text-text-primary">Share Code</p>
+            </div>
+            {shareLoading && <p className="text-xs font-body text-text-muted">Generating code...</p>}
+            {shareModal?.code && (
+              <>
+                <div className="flex items-center gap-2 bg-base-800 border border-border rounded-lg px-3 py-2">
+                  <code className="text-sm font-mono text-accent-blue flex-1">{shareModal.code}</code>
+                  <button onClick={() => { navigator.clipboard.writeText(shareModal.code); setShareModal(r => ({ ...r, copied: true })); }} className="text-text-muted hover:text-text-primary transition-colors shrink-0">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                  </button>
+                </div>
+                {shareModal.copied && <p className="text-[10px] font-body text-status-green">Copied to clipboard!</p>}
+                <p className="text-[10px] font-body text-text-muted">Code expires in 14 days</p>
+              </>
+            )}
+            {shareModal?.error && <p className="text-xs font-body text-val-red">{shareModal.error}</p>}
+            <div className="flex justify-end pt-1">
+              <button onClick={() => { setShareModal(null); setShareLoading(false); }} className="px-3 py-1.5 rounded-lg text-xs font-body bg-base-600 border border-border text-text-secondary hover:text-text-primary transition-colors">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {importCodeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setImportCodeModal(null)}>
+          <div className="bg-base-700 border border-border rounded-xl p-5 max-w-xs w-full space-y-3 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent-blue shrink-0"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>
+              <p className="text-sm font-display font-semibold text-text-primary">Import Code</p>
+            </div>
+            <input
+              value={importCodeValue}
+              onChange={e => { setImportCodeValue(e.target.value); setImportCodeError(""); }}
+              onKeyDown={e => { if (e.key === "Enter") handleImportCode(); if (e.key === "Escape") setImportCodeModal(null); }}
+              placeholder={importCodeModal === "config" ? "VT-CFG-XXXXX" : "VT-THEME-XXXXX"}
+              className="w-full px-3 py-2 bg-base-800 border border-border rounded-lg text-xs font-body text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-light transition-colors"
+              autoFocus
+            />
+            {importCodeError && <p className="text-[10px] font-body text-val-red">{importCodeError}</p>}
+            <div className="flex gap-2 justify-end pt-1">
+              <button onClick={() => setImportCodeModal(null)} className="px-3 py-1.5 rounded-lg text-xs font-body bg-base-600 border border-border text-text-secondary hover:text-text-primary transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleImportCode} disabled={!importCodeValue.trim()} className="px-3 py-1.5 rounded-lg text-xs font-body bg-accent-blue/20 text-accent-blue hover:bg-accent-blue/30 transition-colors disabled:opacity-40 disabled:pointer-events-none">
+                Import
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 }

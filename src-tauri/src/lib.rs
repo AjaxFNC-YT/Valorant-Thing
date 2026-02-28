@@ -7,6 +7,7 @@ use tauri::{
 
 mod riot;
 mod discord;
+mod cloud;
 
 type SharedState = Arc<Mutex<riot::ConnectionState>>;
 type DiscordShared = Arc<Mutex<discord::DiscordState>>;
@@ -49,6 +50,11 @@ fn is_valorant_foreground() -> bool {
 fn get_valorant_monitor() -> Result<String, String> {
     let (x, y, w, h) = riot::get_valorant_monitor()?;
     Ok(serde_json::json!({ "x": x, "y": y, "width": w, "height": h }).to_string())
+}
+
+#[tauri::command]
+fn list_monitors() -> Result<String, String> {
+    riot::list_monitors()
 }
 
 #[tauri::command]
@@ -96,6 +102,41 @@ fn list_dir(path: String) -> Result<Vec<String>, String> {
         }
     }
     Ok(entries)
+}
+
+#[tauri::command]
+fn show_window_no_focus(app: tauri::AppHandle, label: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        extern "system" {
+            fn ShowWindow(hwnd: isize, cmd: i32) -> i32;
+            fn SetWindowPos(hwnd: isize, insert_after: isize, x: i32, y: i32, cx: i32, cy: i32, flags: u32) -> i32;
+        }
+        const SW_SHOWNOACTIVATE: i32 = 4;
+        const HWND_TOPMOST: isize = -1;
+        const SWP_NOMOVE: u32 = 0x0002;
+        const SWP_NOSIZE: u32 = 0x0001;
+        const SWP_NOACTIVATE: u32 = 0x0010;
+
+        if let Some(window) = app.get_webview_window(&label) {
+            let hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as isize;
+            unsafe {
+                ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+                SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
+            return Ok(());
+        }
+        Err("Window not found".into())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Some(window) = app.get_webview_window(&label) {
+            window.show().map_err(|e| e.to_string())?;
+            Ok(())
+        } else {
+            Err("Window not found".into())
+        }
+    }
 }
 
 #[tauri::command]
@@ -675,6 +716,7 @@ pub fn run() {
             is_valorant_running,
             is_valorant_foreground,
             get_valorant_monitor,
+            list_monitors,
             find_valorant_path,
             compute_file_hash,
             force_copy_file,
@@ -729,6 +771,9 @@ pub fn run() {
             xmpp_get_logs,
             xmpp_send_fake_presence,
             get_app_version,
+            show_window_no_focus,
+            cloud::cloud_save,
+            cloud::cloud_load,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

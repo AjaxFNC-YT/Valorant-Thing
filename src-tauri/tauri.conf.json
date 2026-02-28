@@ -1,6 +1,6 @@
 {
   "productName": "Valorant Thing",
-  "version": "1.7.2",
+  "version": "1.8.0",
   "identifier": "com.valorantthing.app",
   "build": {
     "beforeDevCommand": "npm run dev",

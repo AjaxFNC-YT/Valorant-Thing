@@ -166,6 +166,96 @@ pub fn get_valorant_monitor() -> Result<(i32, i32, u32, u32), String> {
     Ok((0, 0, 1920, 1080))
 }
 
+#[cfg(target_os = "windows")]
+pub fn list_monitors() -> Result<String, String> {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+    use std::sync::Mutex;
+
+    #[repr(C)]
+    struct Rect { left: i32, top: i32, right: i32, bottom: i32 }
+    #[repr(C)]
+    #[allow(non_snake_case)]
+    struct MonitorInfoExW {
+        cbSize: u32, rcMonitor: Rect, rcWork: Rect, dwFlags: u32,
+        szDevice: [u16; 32],
+    }
+    #[repr(C)]
+    #[allow(non_snake_case)]
+    struct DevModeW {
+        dmDeviceName: [u16; 32],
+        dmSpecVersion: u16, dmDriverVersion: u16, dmSize: u16, dmDriverExtra: u16,
+        dmFields: u32,
+        _union1: [u8; 16],
+        dmColor: i16, dmDuplex: i16, dmYResolution: i16, dmTTOption: i16,
+        dmCollate: i16, dmFormName: [u16; 32], dmLogPixels: u16, dmBitsPerPel: u32,
+        dmPelsWidth: u32, dmPelsHeight: u32,
+        _union2: u32,
+        dmDisplayFrequency: u32,
+        _rest: [u8; 40],
+    }
+
+    const MONITORINFOF_PRIMARY: u32 = 1;
+    const ENUM_CURRENT_SETTINGS: u32 = 0xFFFFFFFF;
+
+    extern "system" {
+        fn EnumDisplayMonitors(hdc: isize, clip: *const Rect, proc: extern "system" fn(isize, isize, *const Rect, isize) -> i32, data: isize) -> i32;
+        fn GetMonitorInfoW(monitor: isize, info: *mut MonitorInfoExW) -> i32;
+        fn EnumDisplaySettingsW(device: *const u16, mode: u32, devmode: *mut DevModeW) -> i32;
+    }
+
+    struct MonEntry { device: String, x: i32, y: i32, w: u32, h: u32, hz: u32, primary: bool }
+    static MONITORS: Mutex<Option<Vec<MonEntry>>> = Mutex::new(None);
+
+    extern "system" fn enum_cb(hmon: isize, _hdc: isize, _rect: *const Rect, _data: isize) -> i32 {
+        unsafe {
+            let mut info: MonitorInfoExW = std::mem::zeroed();
+            info.cbSize = std::mem::size_of::<MonitorInfoExW>() as u32;
+            if GetMonitorInfoW(hmon, &mut info) == 0 { return 1; }
+
+            let name_len = info.szDevice.iter().position(|&c| c == 0).unwrap_or(32);
+            let device = OsString::from_wide(&info.szDevice[..name_len]).to_string_lossy().to_string();
+            let x = info.rcMonitor.left;
+            let y = info.rcMonitor.top;
+            let w = (info.rcMonitor.right - info.rcMonitor.left) as u32;
+            let h = (info.rcMonitor.bottom - info.rcMonitor.top) as u32;
+            let primary = (info.dwFlags & MONITORINFOF_PRIMARY) != 0;
+
+            let mut dm: DevModeW = std::mem::zeroed();
+            dm.dmSize = std::mem::size_of::<DevModeW>() as u16;
+            let hz = if EnumDisplaySettingsW(info.szDevice.as_ptr(), ENUM_CURRENT_SETTINGS, &mut dm) != 0 {
+                dm.dmDisplayFrequency
+            } else { 0 };
+
+            if let Ok(mut guard) = MONITORS.lock() {
+                guard.as_mut().map(|v| v.push(MonEntry { device, x, y, w, h, hz, primary }));
+            }
+        }
+        1
+    }
+
+    {
+        let mut guard = MONITORS.lock().map_err(|e| e.to_string())?;
+        *guard = Some(Vec::new());
+    }
+    unsafe { EnumDisplayMonitors(0, std::ptr::null(), enum_cb, 0); }
+    let guard = MONITORS.lock().map_err(|e| e.to_string())?;
+    let list = guard.as_ref().ok_or("No monitors found")?;
+    let arr: Vec<_> = list.iter().enumerate().map(|(i, m)| {
+        serde_json::json!({
+            "index": i, "device": m.device,
+            "x": m.x, "y": m.y, "width": m.w, "height": m.h,
+            "hz": m.hz, "primary": m.primary
+        })
+    }).collect();
+    Ok(serde_json::json!(arr).to_string())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn list_monitors() -> Result<String, String> {
+    Ok(serde_json::json!([{"index":0,"device":"Monitor 1","x":0,"y":0,"width":1920,"height":1080,"hz":60,"primary":true}]).to_string())
+}
+
 pub fn find_valorant_path() -> Result<String, String> {
     let programdata = std::env::var("ALLUSERSPROFILE").unwrap_or_else(|_| "C:\\ProgramData".to_string());
     let settings_path = format!("{}\\Riot Games\\Metadata\\valorant.live\\valorant.live.product_settings.yaml", programdata);
