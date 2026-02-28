@@ -18,9 +18,11 @@
 
 ## Screenshots
 
+![Home](screenshots/home.png)
 ![InstaLock](screenshots/instalock.png)
 ![Match Info](screenshots/match-info.png)
 ![Map Dodge](screenshots/map-dodge.png)
+![Fake Status](screenshots/fake-status.png)
 ![Settings](screenshots/settings.png)
 
 ---
