@@ -185,6 +185,7 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [autoUnqueue, setAutoUnqueue] = useState(() => localStorage.getItem("auto_unqueue") === "true");
   const [autoRequeue, setAutoRequeue] = useState(() => localStorage.getItem("auto_requeue") === "true");
+  const [bombTrackerEnabled, setBombTrackerEnabled] = useState(() => localStorage.getItem("bomb_tracker_enabled") === "true");
   const [selectDelay, setSelectDelay] = useState(() => {
     const saved = localStorage.getItem("instalock_select_delay");
     return saved ? parseInt(saved, 10) : 0;
@@ -200,6 +201,7 @@ export default function App() {
   // });
   const notifWindowRef = useRef(null);
   const mapLookupRef = useRef({});
+  const currentMatchMapRef = useRef(null);
   const notifiedMatchRef = useRef(null);
   const connectingRef = useRef(false);
   const instalockConfigRef = useRef({ maps: [], selectedAgent: null, perMapSelections: {} });
@@ -317,6 +319,44 @@ export default function App() {
   useEffect(() => { mapDodgeActiveRef.current = mapDodgeActive; }, [mapDodgeActive]);
   useEffect(() => { autoUnqueueRef.current = autoUnqueue; localStorage.setItem("auto_unqueue", String(autoUnqueue)); }, [autoUnqueue]);
   useEffect(() => { autoRequeueRef.current = autoRequeue; localStorage.setItem("auto_requeue", String(autoRequeue)); }, [autoRequeue]);
+
+  useEffect(() => {
+    localStorage.setItem("bomb_tracker_enabled", String(bombTrackerEnabled));
+    if (bombTrackerEnabled) {
+      invoke("start_bomb_tracker").then(() => addLog("info", "[BombTracker] Started")).catch((e) => addLog("error", `[BombTracker] Start failed: ${e}`));
+    } else {
+      invoke("stop_bomb_tracker").catch(() => {});
+    }
+  }, [bombTrackerEnabled]);
+
+  const lastBombEventRef = useRef(0);
+  useEffect(() => {
+    if (!bombTrackerEnabled) return;
+    let unlisten;
+    (async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+      unlisten = await listen("bomb-planted", (e) => {
+        const now = Date.now();
+        if (now - lastBombEventRef.current < 45000) return;
+        lastBombEventRef.current = now;
+        const d = e.payload;
+        const ts = new Date(d.epochMs).toLocaleTimeString();
+        addLog("match", `[BombTracker] Spike planted at ${ts} (monitor: ${d.monitor.w}x${d.monitor.h})`);
+        if (localStorage.getItem("notifications_enabled") !== "false") {
+          const map = currentMatchMapRef.current;
+          pushNotification({
+            id: `bomb-${now}`,
+            type: "bomb-planted",
+            mapName: map?.displayName || null,
+            mapImage: map?.listViewIcon || map?.splash || null,
+            totalMs: 45000,
+            startTime: now,
+          });
+        }
+      });
+    })();
+    return () => { if (unlisten) unlisten(); };
+  }, [bombTrackerEnabled]);
 
   useEffect(() => {
     localStorage.setItem("discord_rpc", String(discordRpc));
@@ -597,6 +637,8 @@ export default function App() {
         gamePhaseRef.current = currentPhase;
 
         if (currentPhase === "ingame") {
+          const mapData = mapLookupRef.current[match.MapID?.toLowerCase()] || null;
+          if (mapData) currentMatchMapRef.current = mapData;
           const myPuuid = player?.puuid;
           const me = (match.Players || []).find((p) => p.Subject === myPuuid);
           const myTeam = me?.TeamID;
@@ -1274,6 +1316,8 @@ export default function App() {
               onAutoUnqueueChange={setAutoUnqueue}
               autoRequeue={autoRequeue}
               onAutoRequeueChange={setAutoRequeue}
+              bombTrackerEnabled={bombTrackerEnabled}
+              onBombTrackerEnabledChange={setBombTrackerEnabled}
             />
             </motion.div>
           )}

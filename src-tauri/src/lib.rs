@@ -8,6 +8,7 @@ use tauri::{
 mod riot;
 mod discord;
 mod cloud;
+mod bomb_tracker;
 
 type SharedState = Arc<Mutex<riot::ConnectionState>>;
 type DiscordShared = Arc<Mutex<discord::DiscordState>>;
@@ -109,6 +110,8 @@ fn show_window_no_focus(app: tauri::AppHandle, label: String) -> Result<(), Stri
     #[cfg(target_os = "windows")]
     {
         extern "system" {
+            fn GetForegroundWindow() -> isize;
+            fn SetForegroundWindow(hwnd: isize) -> i32;
             fn ShowWindow(hwnd: isize, cmd: i32) -> i32;
             fn SetWindowPos(hwnd: isize, insert_after: isize, x: i32, y: i32, cx: i32, cy: i32, flags: u32) -> i32;
         }
@@ -121,8 +124,12 @@ fn show_window_no_focus(app: tauri::AppHandle, label: String) -> Result<(), Stri
         if let Some(window) = app.get_webview_window(&label) {
             let hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as isize;
             unsafe {
+                let prev_fg = GetForegroundWindow();
                 ShowWindow(hwnd, SW_SHOWNOACTIVATE);
                 SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                if prev_fg != 0 && prev_fg != hwnd {
+                    SetForegroundWindow(prev_fg);
+                }
             }
             return Ok(());
         }
@@ -148,6 +155,49 @@ fn toggle_devtools(app: tauri::AppHandle) {
             window.open_devtools();
         }
     }
+}
+
+#[tauri::command]
+fn read_game_log(offset: u64) -> Result<serde_json::Value, String> {
+    let local_app_data =
+        std::env::var("LOCALAPPDATA").map_err(|_| "LOCALAPPDATA not found".to_string())?;
+    let path = format!(
+        "{}\\VALORANT\\Saved\\Logs\\ShooterGame.log",
+        local_app_data
+    );
+
+    let file = std::fs::File::open(&path)
+        .map_err(|e| format!("Could not open ShooterGame.log: {}", e))?;
+    let file_len = file.metadata().map_err(|e| e.to_string())?.len();
+
+    let actual_offset = if offset > file_len { 0 } else { offset };
+
+    let read_from = if actual_offset == 0 && file_len > 131072 {
+        file_len - 131072
+    } else {
+        actual_offset
+    };
+
+    let max_read: u64 = 131072;
+    let read_len = std::cmp::min(file_len.saturating_sub(read_from), max_read);
+
+    if read_len == 0 {
+        return Ok(serde_json::json!({ "text": "", "offset": file_len, "fileSize": file_len }));
+    }
+
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = file;
+    file.seek(SeekFrom::Start(read_from)).map_err(|e| e.to_string())?;
+    let mut buf = vec![0u8; read_len as usize];
+    file.read_exact(&mut buf).map_err(|e| e.to_string())?;
+
+    let text = String::from_utf8_lossy(&buf).to_string();
+
+    Ok(serde_json::json!({
+        "text": text,
+        "offset": file_len,
+        "fileSize": file_len,
+    }))
 }
 
 #[tauri::command]
@@ -772,6 +822,10 @@ pub fn run() {
             xmpp_send_fake_presence,
             get_app_version,
             show_window_no_focus,
+            read_game_log,
+            bomb_tracker::start_bomb_tracker,
+            bomb_tracker::stop_bomb_tracker,
+            bomb_tracker::is_bomb_tracker_running,
             cloud::cloud_save,
             cloud::cloud_load,
         ])

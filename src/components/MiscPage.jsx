@@ -14,7 +14,7 @@ function getVideoConfig() {
   try { return JSON.parse(localStorage.getItem("menu_video_config")); } catch { return null; }
 }
 
-export default function MiscPage({ connected, autoUnqueue, onAutoUnqueueChange, autoRequeue, onAutoRequeueChange }) {
+export default function MiscPage({ connected, autoUnqueue, onAutoUnqueueChange, autoRequeue, onAutoRequeueChange, bombTrackerEnabled, onBombTrackerEnabledChange }) {
   const [isLeader, setIsLeader] = useState(false);
   const [loading, setLoading] = useState(true);
   const [videoStatus, setVideoStatus] = useState("");
@@ -228,6 +228,25 @@ export default function MiscPage({ connected, autoUnqueue, onAutoUnqueueChange, 
           </div>
           <Toggle enabled={autoRequeue} onChange={onAutoRequeueChange} />
         </div>
+      </motion.div>
+
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={noAnim() ? T0 : { duration: 0.2, delay: 0.08 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-4">
+        <h3 className="text-xs font-display font-medium text-text-secondary uppercase tracking-wider">Bomb Tracker</h3>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-display font-medium text-text-primary">Spike Plant Detection</p>
+            <p className="text-xs font-body text-text-muted mt-0.5">Detect when the spike is planted via screen color sampling</p>
+          </div>
+          <Toggle enabled={bombTrackerEnabled} onChange={onBombTrackerEnabledChange} />
+        </div>
+        {bombTrackerEnabled && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-accent-blue/10 border border-accent-blue/20">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent-blue shrink-0">
+              <circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" />
+            </svg>
+            <span className="text-[11px] font-body text-accent-blue">Works best when fully tabbed into the game. Timer may get slightly desynced at times.</span>
+          </div>
+        )}
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={noAnim() ? T0 : { duration: 0.2, delay: 0.1 }} className="p-4 rounded-xl bg-base-700 border border-border space-y-4">

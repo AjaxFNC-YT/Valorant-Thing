@@ -214,7 +214,7 @@ const CONFIG_KEYS = [
   "notifications_enabled", "notification_position", "notification_screen",
   "dodge_keybind", "dodge_keybind_enabled",
   "instalock-profiles", "instalock-active-profile",
-  "dev_tab_enabled",
+  "dev_tab_enabled", "bomb_tracker_enabled",
 ];
 
 export default function SettingsPage({
