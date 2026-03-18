@@ -1,7 +1,7 @@
 use std::process::Command;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
-use super::logging::log_info;
+use super::logging::{log_info, log_error};
 
 pub fn read_lockfile() -> Result<(u32, u16, String), String> {
     let local_app_data =
@@ -274,14 +274,7 @@ pub fn find_valorant_path() -> Result<String, String> {
 }
 
 pub fn parse_region_shard() -> Result<(String, String), String> {
-    let local_app_data =
-        std::env::var("LOCALAPPDATA").map_err(|_| "LOCALAPPDATA not found".to_string())?;
-    let path = format!(
-        "{}\\VALORANT\\Saved\\Logs\\ShooterGame.log",
-        local_app_data
-    );
-    let log = std::fs::read_to_string(&path)
-        .map_err(|_| "Could not read ShooterGame.log. Is Valorant installed?".to_string())?;
+    let log = read_shooter_log()?;
     let re = regex::Regex::new(r"https://glz-(.+?)-1\.(.+?)\.a\.pvp\.net")
         .map_err(|e| e.to_string())?;
     let last = re.captures_iter(&log).last()
@@ -290,4 +283,32 @@ pub fn parse_region_shard() -> Result<(String, String), String> {
     let shard = last[2].to_string();
     log_info(&format!("[Connect] Parsed region={} shard={} from ShooterGame.log", region, shard));
     Ok((region, shard))
+}
+
+pub fn parse_client_version() -> Result<String, String> {
+    let log = read_shooter_log()?;
+    let re = regex::Regex::new(r"CI server version:\s*(.+)")
+        .map_err(|e| e.to_string())?;
+    match re.captures(&log) {
+        Some(cap) => {
+            let version = cap[1].trim().to_string();
+            log_info(&format!("[Connect] Parsed client_version={} from ShooterGame.log", version));
+            Ok(version)
+        }
+        None => {
+            log_error("[Connect] Could not find 'CI server version' in ShooterGame.log");
+            Err("Could not find client version in ShooterGame.log".to_string())
+        }
+    }
+}
+
+fn read_shooter_log() -> Result<String, String> {
+    let local_app_data =
+        std::env::var("LOCALAPPDATA").map_err(|_| "LOCALAPPDATA not found".to_string())?;
+    let path = format!(
+        "{}\\VALORANT\\Saved\\Logs\\ShooterGame.log",
+        local_app_data
+    );
+    std::fs::read_to_string(&path)
+        .map_err(|_| "Could not read ShooterGame.log. Is Valorant installed?".to_string())
 }

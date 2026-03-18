@@ -32,6 +32,8 @@ const QUEUES = [
   { id: "skirmish2v2", label: "Skirmish 2v2" },
   { id: "onefa", label: "Replication" },
   { id: "snowball", label: "Snowball Fight" },
+  { id: "valaram", label: "All Random One Site" },
+  { id: "dodgeball", label: "Knockout" },
   { id: "custom", label: "Custom Game" },
 ];
 
@@ -113,20 +115,44 @@ function Field({ label, children, tooltip }) {
 
 function CustomSelect({ value, onChange, options, renderOption }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const containerRef = useRef(null);
+  const btnRef = useRef(null);
+  const dropRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
   const selected = options.find(o => o.id === value || o.tier === value) || options[0];
 
   useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const handler = (e) => { if (containerRef.current && !containerRef.current.contains(e.target) && dropRef.current && !dropRef.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  useEffect(() => {
+    if (!open) return;
+    const onScroll = (e) => { if (dropRef.current && !dropRef.current.contains(e.target)) setOpen(false); };
+    window.addEventListener("scroll", onScroll, true);
+    return () => window.removeEventListener("scroll", onScroll, true);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    const maxH = 256;
+    const spaceBelow = window.innerHeight - r.bottom - 8;
+    if (spaceBelow >= 80) {
+      setPos({ top: r.bottom + 4, left: r.left, width: r.width, maxH: Math.min(maxH, spaceBelow) });
+    } else {
+      const spaceAbove = r.top - 8;
+      const h = Math.min(maxH, spaceAbove);
+      setPos({ top: r.top - h - 4, left: r.left, width: r.width, maxH: h });
+    }
+  }, [open]);
+
   const valKey = selected.tier !== undefined ? "tier" : "id";
 
   return (
-    <div className="relative" ref={ref}>
-      <button type="button" onClick={() => setOpen(v => !v)}
+    <div ref={containerRef}>
+      <button ref={btnRef} type="button" onClick={() => setOpen(v => !v)}
         className="w-full flex items-center gap-2 px-2.5 py-1.5 bg-base-800 border border-border rounded-lg text-xs font-body text-text-primary hover:border-val-red/40 transition-colors"
       >
         <span className="flex-1 text-left flex items-center gap-2">{renderOption ? renderOption(selected) : selected.name || selected.label}</span>
@@ -135,7 +161,9 @@ function CustomSelect({ value, onChange, options, renderOption }) {
         </svg>
       </button>
       {open && (
-        <div className="absolute z-50 mt-1 left-0 right-0 bg-base-800 border border-border rounded-lg shadow-xl max-h-64 overflow-y-auto">
+        <div ref={dropRef} className="fixed z-[9999] bg-base-800 border border-border rounded-lg shadow-xl overflow-y-auto"
+          style={{ top: pos.top, left: pos.left, width: pos.width, maxHeight: pos.maxH }}
+        >
           {options.map(o => (
             <button key={o[valKey]} onClick={() => { onChange(o[valKey]); setOpen(false); }}
               className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs font-body hover:bg-base-600 transition-colors ${o[valKey] === value ? "bg-base-600 text-text-primary" : "text-text-secondary"}`}
@@ -167,13 +195,37 @@ function ApiSearch({ value, onChange, endpoint, nameKey, iconKey, placeholder })
   const [loading, setLoading] = useState(false);
   const [selectedName, setSelectedName] = useState("");
   const [selectedIcon, setSelectedIcon] = useState(null);
-  const ref = useRef(null);
+  const containerRef = useRef(null);
+  const inputRef = useRef(null);
+  const dropRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
 
   useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const handler = (e) => { if (containerRef.current && !containerRef.current.contains(e.target) && dropRef.current && !dropRef.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onScroll = (e) => { if (dropRef.current && !dropRef.current.contains(e.target)) setOpen(false); };
+    window.addEventListener("scroll", onScroll, true);
+    return () => window.removeEventListener("scroll", onScroll, true);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !inputRef.current) return;
+    const r = inputRef.current.getBoundingClientRect();
+    const maxH = 208;
+    const spaceBelow = window.innerHeight - r.bottom - 8;
+    if (spaceBelow >= 80) {
+      setPos({ top: r.bottom + 4, left: r.left, width: r.width, maxH: Math.min(maxH, spaceBelow) });
+    } else {
+      const spaceAbove = r.top - 8;
+      const h = Math.min(maxH, spaceAbove);
+      setPos({ top: r.top - h - 4, left: r.left, width: r.width, maxH: h });
+    }
+  }, [open]);
 
   const loadItems = async () => {
     if (items.length > 0) return;
@@ -199,10 +251,11 @@ function ApiSearch({ value, onChange, endpoint, nameKey, iconKey, placeholder })
     : items.slice(0, 50);
 
   return (
-    <div className="relative" ref={ref}>
+    <div ref={containerRef}>
       <div className="flex items-center gap-1.5">
         {selectedIcon && <img src={selectedIcon} alt="" className="w-6 h-6 rounded object-cover shrink-0" />}
         <input
+          ref={inputRef}
           value={open ? query : (selectedName || "")}
           onChange={e => { setQuery(e.target.value); if (!open) setOpen(true); }}
           onFocus={() => { setOpen(true); setQuery(""); loadItems(); }}
@@ -215,7 +268,9 @@ function ApiSearch({ value, onChange, endpoint, nameKey, iconKey, placeholder })
         )}
       </div>
       {open && (
-        <div className="absolute z-50 mt-1 left-0 right-0 bg-base-800 border border-border rounded-lg shadow-xl max-h-52 overflow-y-auto">
+        <div ref={dropRef} className="fixed z-[9999] bg-base-800 border border-border rounded-lg shadow-xl overflow-y-auto"
+          style={{ top: pos.top, left: pos.left, width: pos.width, maxHeight: pos.maxH }}
+        >
           {loading && <p className="text-[10px] text-text-muted text-center py-3">Loading...</p>}
           {!loading && filtered.length === 0 && <p className="text-[10px] text-text-muted text-center py-3">No results</p>}
           {filtered.map(item => (

@@ -13,7 +13,7 @@ export default function NotificationToast({ notification, onDismiss }) {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (!notification) return;
 
-    if (notification.type === "locking" || notification.type === "bomb-planted") {
+    if (notification.type === "locking") {
       const { totalMs, startTime } = notification;
       const tick = () => {
         const left = Math.max(0, totalMs - (Date.now() - startTime));
@@ -39,7 +39,6 @@ export default function NotificationToast({ notification, onDismiss }) {
   const { type } = notification;
 
   if (type === "match-found") return <MatchFoundCard n={notification} />;
-  if (type === "bomb-planted") return <BombPlantedCard n={notification} remaining={remaining} />;
   if (type === "dodged") return <DodgedCard n={notification} />;
   if (type === "queue") return <QueueCard n={notification} />;
 
@@ -221,115 +220,6 @@ function VTHeader() {
         Valorant-Thing
       </span>
     </div>
-  );
-}
-
-function BombPlantedCard({ n, remaining }) {
-  const totalMs = n.totalMs || 45000;
-  const secs = Math.max(0, remaining / 1000).toFixed(1);
-  const progress = Math.max(0, remaining / totalMs);
-  const expired = remaining <= 0;
-
-  const safeFull = remaining > 7000;
-  const safeHalf = remaining > 3500;
-  const safetyLabel = expired ? "DETONATED" : safeFull ? "Safe to defuse" : safeHalf ? "Safe to HALF defuse" : "NOT safe to defuse";
-  const safetyColor = expired ? "#ef4444" : safeFull ? "rgb(var(--status-green))" : safeHalf ? "#f59e0b" : "#ef4444";
-
-  const barColor = safeFull ? "#e60000" : safeHalf ? "#f59e0b" : "#ef4444";
-
-  return (
-    <div
-      className="flex items-stretch rounded-xl overflow-hidden border border-border backdrop-blur-sm"
-      style={{
-        background: "rgb(var(--base-800) / 0.95)",
-        width: 320,
-        boxShadow: `0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04) inset, 0 0 ${expired ? 0 : 20}px ${expired ? "transparent" : "rgba(230,0,0,0.3)"}`,
-      }}
-    >
-      <motion.div
-        className="rounded-l-xl"
-        style={{ width: 4, flexShrink: 0 }}
-        animate={{ background: ["#aa0000", "#e60000", "#aa0000"] }}
-        transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <div className="relative h-[72px] w-full overflow-hidden">
-          {n.mapImage && <img src={n.mapImage} alt="" className="absolute inset-0 w-full h-full object-cover" />}
-          <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.85) 100%)" }} />
-          <motion.div
-            className="absolute inset-0"
-            animate={{ opacity: [0.0, 0.15, 0.0] }}
-            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-            style={{ background: "linear-gradient(180deg, #e60000 0%, transparent 100%)" }}
-          />
-          <div className="relative h-full flex flex-col justify-end p-3 gap-1">
-            <div className="flex items-center gap-2">
-              <motion.div
-                animate={{ scale: [1, 1.15, 1] }}
-                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-              >
-                <BombIcon />
-              </motion.div>
-              <motion.span
-                className="text-xs font-display font-bold tracking-[0.2em] uppercase"
-                animate={{ color: ["#aa0000", "#e60000", "#aa0000"] }}
-                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-              >
-                Spike Planted
-              </motion.span>
-            </div>
-            {n.mapName && <p className="text-sm font-display font-bold text-text-primary leading-tight tracking-wide">{n.mapName}</p>}
-          </div>
-        </div>
-        <div className="px-3 py-2.5 space-y-2">
-          <div className="flex items-center justify-between">
-            <VTHeader />
-            {!expired && (
-              <span className="text-sm font-display font-bold tabular-nums" style={{ color: barColor }}>
-                {secs}s
-              </span>
-            )}
-          </div>
-          {!expired && (
-            <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: "rgb(var(--base-600))" }}>
-              <motion.div
-                className="h-full rounded-full"
-                style={{ background: barColor, transformOrigin: "left" }}
-                animate={{ scaleX: progress }}
-                transition={{ duration: 0.05, ease: "linear" }}
-              />
-            </div>
-          )}
-          <div className="flex items-center gap-1.5">
-            {safeFull ? (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className="shrink-0" style={{ color: safetyColor }}>
-                <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            ) : safeHalf ? (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className="shrink-0" style={{ color: safetyColor }}>
-                <path d="M12 9v4M12 17h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
-              </svg>
-            ) : (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className="shrink-0" style={{ color: safetyColor }}>
-                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-              </svg>
-            )}
-            <span className="text-[11px] font-display font-semibold" style={{ color: safetyColor }}>{safetyLabel}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function BombIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ color: "#e60000" }}>
-      <circle cx="12" cy="14" r="7" stroke="currentColor" strokeWidth="1.5" fill="currentColor" fillOpacity="0.15" />
-      <path d="M12 7V3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M9 3.5L12 5l3-1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
   );
 }
 

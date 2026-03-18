@@ -3,6 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
 
 const TIER_UUID = "03621f52-342b-cf4e-4f86-9350a49c6d04";
+const CUSTOM_AGENT_ICONS = {
+  "7c8a4701-4de6-9355-b254-e09bc2a34b72": "/agents/miks.png",
+};
 const noAnim = () => localStorage.getItem("disable_animations") === "true";
 const T0 = { duration: 0 };
 const rankIcon = (tier) => `https://media.valorant-api.com/competitivetiers/${TIER_UUID}/${tier}/smallicon.png`;
@@ -283,15 +286,15 @@ export default function HomePage({ connected, player, refreshKey, onRefresh }) {
             const mapData = maps[m.map];
             const mapName = mapData?.name || m.map;
             const mapImg = mapData?.listIcon || mapData?.splash;
-            const agentIcon = m.agent ? `https://media.valorant-api.com/agents/${m.agent}/displayicon.png` : null;
+            const agentIcon = m.agent ? (CUSTOM_AGENT_ICONS[m.agent.toLowerCase()] || `https://media.valorant-api.com/agents/${m.agent}/displayicon.png`) : null;
             const kdaVal = m.deaths > 0 ? ((m.kills + m.assists) / m.deaths).toFixed(1) : null;
             const kdaText = kdaVal ? `${kdaVal} KDA` : "Perfect KDA";
 
             const q = m.queueId || "";
-            const MODE_NAMES = { competitive: "Competitive", unrated: "Unrated", deathmatch: "Deathmatch", spikerush: "Spike Rush", swiftplay: "Swiftplay", ggteam: "Escalation", hurm: "Team Deathmatch", premier: "Premier", newmap: "New Map", snowball: "Snowball Fight", onefa: "Replication", skirmish2v2: "Skirmish 2v2", valaram: "All Random One Site", custom: "Custom" };
+            const MODE_NAMES = { competitive: "Competitive", unrated: "Unrated", deathmatch: "Deathmatch", spikerush: "Spike Rush", swiftplay: "Swiftplay", ggteam: "Escalation", hurm: "Team Deathmatch", premier: "Premier", newmap: "New Map", snowball: "Snowball Fight", onefa: "Replication", skirmish2v2: "Skirmish 2v2", valaram: "All Random One Site", dodgeball: "Knockout", custom: "Custom" };
             const modeName = MODE_NAMES[q] || (q ? q.charAt(0).toUpperCase() + q.slice(1) : "Custom");
             const isDeathmatch = q === "deathmatch";
-            const isEscalation = q === "ggteam";
+            const isEscalation = q === "ggteam" || q === "dodgeball";
 
             let resultText, resultColor, borderColor;
             if (isDeathmatch) {

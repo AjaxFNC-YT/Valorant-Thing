@@ -184,11 +184,12 @@ pub fn pd_get(shard: &str, path: &str, access_token: &str, entitlements: &str, c
 }
 
 pub fn pd_put(shard: &str, path: &str, body: &str, access_token: &str, entitlements: &str, client_version: &str) -> Result<String, String> {
+    use base64::Engine;
     let url = format!("https://pd.{}.a.pvp.net{}", shard, path);
-    let escaped_body = body.replace('\\', "\\\\").replace('\'', "\\'");
+    let b64_body = base64::engine::general_purpose::STANDARD.encode(body.as_bytes());
     let script = format!(
-        r#"const https=require('https');const u=new URL('{}');const b='{}';const r=https.request({{hostname:u.hostname,path:u.pathname,method:'PUT',headers:{{'Authorization':'Bearer {}','X-Riot-Entitlements-JWT':'{}','X-Riot-ClientPlatform':'{}','X-Riot-ClientVersion':'{}','Content-Type':'application/json','Content-Length':Buffer.byteLength(b)}}}},res=>{{let d='';res.on('data',c=>d+=c);res.on('end',()=>process.stdout.write(d))}});r.on('error',e=>{{process.stderr.write(e.message);process.exit(1)}});r.setTimeout(5000,()=>{{r.destroy();process.stderr.write('timeout');process.exit(1)}});r.end(b)"#,
-        url, escaped_body, access_token, entitlements, PLATFORM, client_version
+        r#"const https=require('https');const zlib=require('zlib');const u=new URL('{}');const b=Buffer.from('{}','base64').toString();const r=https.request({{hostname:u.hostname,path:u.pathname,method:'PUT',headers:{{'Authorization':'Bearer {}','X-Riot-Entitlements-JWT':'{}','X-Riot-ClientPlatform':'{}','X-Riot-ClientVersion':'{}','Content-Type':'application/json','Content-Length':Buffer.byteLength(b)}}}},res=>{{const chunks=[];res.on('data',c=>chunks.push(c));res.on('end',()=>{{let buf=Buffer.concat(chunks);const enc=res.headers['content-encoding'];process.stderr.write('HTTP '+res.statusCode+' enc='+(enc||'none')+' raw='+buf.length+' ');if(enc==='gzip'){{try{{buf=zlib.gunzipSync(buf)}}catch(e){{process.stderr.write('gunzip err:'+e.message+' ')}}}}else if(enc==='deflate'){{try{{buf=zlib.inflateSync(buf)}}catch(e){{}}}}const out=buf.toString();process.stderr.write('len='+out.length);process.stdout.write(out)}})}});r.on('error',e=>{{process.stderr.write('err:'+e.message);process.exit(1)}});r.setTimeout(15000,()=>{{r.destroy();process.stderr.write('timeout');process.exit(1)}});r.end(b)"#,
+        url, b64_body, access_token, entitlements, PLATFORM, client_version
     );
 
     let mut cmd = Command::new("node");
@@ -197,14 +198,15 @@ pub fn pd_put(shard: &str, path: &str, body: &str, access_token: &str, entitleme
     cmd.creation_flags(0x08000000);
     let output = cmd.output().map_err(|e| format!("node failed: {}", e))?;
 
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("{}: {}", path, stderr.trim()));
     }
 
     let body_out = String::from_utf8_lossy(&output.stdout).to_string();
     if body_out.is_empty() {
-        return Err(format!("Empty response from {}", path));
+        return Err(format!("Empty response from {} (debug: {})", path, stderr.trim()));
     }
     Ok(body_out)
 }

@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use super::types::{ConnectionState, PlayerInfo};
 use super::http::{local_get, https_get, authed_get, pd_get};
-use super::process::{read_lockfile, is_pid_alive, is_riot_client_running, parse_region_shard};
+use super::process::{read_lockfile, is_pid_alive, is_riot_client_running, parse_region_shard, parse_client_version};
 use super::logging::{log_info, log_error};
 
 pub fn connect_and_store(state: &Mutex<ConnectionState>) -> Result<PlayerInfo, String> {
@@ -67,19 +67,22 @@ pub fn connect_and_store(state: &Mutex<ConnectionState>) -> Result<PlayerInfo, S
 
     let (region, shard) = parse_region_shard()?;
 
-    let client_version = match https_get("https://valorant-api.com/v1/version") {
-        Ok(body) => {
-            let clean = body.trim().trim_end_matches('\0');
-            match serde_json::from_str::<serde_json::Value>(clean) {
-                Ok(v) => v["data"]["riotClientVersion"]
-                    .as_str()
-                    .unwrap_or("unknown")
-                    .to_string(),
-                Err(_) => "unknown".to_string(),
+    let client_version = parse_client_version().unwrap_or_else(|e| {
+        log_error(&format!("[Connect] ShooterGame.log version parse failed: {}, falling back to valorant-api", e));
+        match https_get("https://valorant-api.com/v1/version") {
+            Ok(body) => {
+                let clean = body.trim().trim_end_matches('\0');
+                match serde_json::from_str::<serde_json::Value>(clean) {
+                    Ok(v) => v["data"]["riotClientVersion"]
+                        .as_str()
+                        .unwrap_or("unknown")
+                        .to_string(),
+                    Err(_) => "unknown".to_string(),
+                }
             }
+            Err(_) => "unknown".to_string(),
         }
-        Err(_) => "unknown".to_string(),
-    };
+    });
     log_info(&format!("[Connect] version={}", client_version));
 
     let mut player_card_url: Option<String> = None;

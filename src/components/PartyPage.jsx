@@ -8,13 +8,12 @@ const T0 = { duration: 0 };
 const QUEUES = [
   { id: "unrated", label: "Unrated" },
   { id: "competitive", label: "Competitive" },
-  { id: "valaram", label: "All Random One Site" },
   { id: "swiftplay", label: "Swiftplay" },
   { id: "deathmatch", label: "Deathmatch" },
   { id: "hurm", label: "Team Deathmatch" },
-  { id: "skirmish2v2", label: "Skirmish 2v2 (LTM)" },
   { id: "ggteam", label: "Escalation" },
   { id: "spikerush", label: "Spike Rush" },
+  { id: "dodgeball", label: "Knockout" },
   { id: "premier", label: "Premier" },
 ];
 
@@ -490,18 +489,17 @@ export default function PartyPage({ connected, addLog, onRefresh }) {
       {isCustom && isLeader && customConfigs && (() => {
         const MODE_NAMES = {
           BombGameMode: "Standard", DeathmatchGameMode: "Deathmatch", GunGameTeamsGameMode: "Escalation",
-          QuickBombGameMode: "Spike Rush", OneForAll_GameMode: "Replication", AROS_GameMode: "All Random One Site",
+          QuickBombGameMode: "Spike Rush", OneForAll_GameMode: "Replication",
           Swiftplay_EoRCredits_GameMode: "Swiftplay", SwiftPlayGameMode: "Swiftplay",
-          HURM_GameMode: "Team Deathmatch", SkirmishGameMode: "Skirmish", SnowballGameMode: "Snowball Fight", NewMapGameMode: "New Map",
+          HURM_GameMode: "Team Deathmatch", SnowballGameMode: "Snowball Fight", NewMapGameMode: "New Map",
         };
         const MAP_NAMES = {
           Duality: "Bind", Triad: "Haven", Bonsai: "Split", Port: "Icebox", Foxtrot: "Breeze",
           Canyon: "Fracture", Pitt: "Pearl", Jam: "Lotus", Juliett: "Sunset", Infinity: "Abyss",
           HURM_Yard: "District", HURM_Alley: "Kasbah", HURM_Bowl: "Piazza", HURM_Helix: "Drift",
-          HURM_ShipLong: "Glitch", Skirmish_A: "Skirmish A", Skirmish_B: "Skirmish B",
-          Skirmish_C: "Skirmish C", Skirmish_D: "Skirmish D",
+          HURM_ShipLong: "Glitch",
         };
-        const MODE_PRIORITY = ["Swiftplay", "Standard", "Deathmatch", "All Random One Site", "Spike Rush", "Escalation", "Replication", "Team Deathmatch", "Skirmish"];
+        const MODE_PRIORITY = ["Swiftplay", "Standard", "Deathmatch", "Spike Rush", "Escalation", "Replication", "Team Deathmatch"];
         const SERVER_NAMES = { dallas: "US Central (Texas)", atlanta: "US Central (Georgia)", chicago: "US Central (Illinois)", ashburn: "US East (N. Virginia)", norcal: "US West (N. California)", oregon: "US West (Oregon)" };
 
         const getModeName = (m) => { const f = m.split("/").pop()?.split(".")[0] || m; if (MODE_NAMES[f]) return MODE_NAMES[f]; if (f.includes("HURM")) return "Team Deathmatch"; return f.replace(/_GameMode|GameMode/gi, "").replace(/_/g, " ").trim(); };

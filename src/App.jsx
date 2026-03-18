@@ -16,6 +16,7 @@ import PartyPage from "./components/PartyPage";
 import MiscPage from "./components/MiscPage";
 import FakeStatusPage from "./components/FakeStatusPage";
 import ChatPage from "./components/ChatPage";
+import LoadoutPage from "./components/LoadoutPage";
 import DevPage from "./components/DevPage";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { emitTo } from "@tauri-apps/api/event";
@@ -185,7 +186,6 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [autoUnqueue, setAutoUnqueue] = useState(() => localStorage.getItem("auto_unqueue") === "true");
   const [autoRequeue, setAutoRequeue] = useState(() => localStorage.getItem("auto_requeue") === "true");
-  const [bombTrackerEnabled, setBombTrackerEnabled] = useState(() => localStorage.getItem("bomb_tracker_enabled") === "true");
   const [selectDelay, setSelectDelay] = useState(() => {
     const saved = localStorage.getItem("instalock_select_delay");
     return saved ? parseInt(saved, 10) : 0;
@@ -320,43 +320,6 @@ export default function App() {
   useEffect(() => { autoUnqueueRef.current = autoUnqueue; localStorage.setItem("auto_unqueue", String(autoUnqueue)); }, [autoUnqueue]);
   useEffect(() => { autoRequeueRef.current = autoRequeue; localStorage.setItem("auto_requeue", String(autoRequeue)); }, [autoRequeue]);
 
-  useEffect(() => {
-    localStorage.setItem("bomb_tracker_enabled", String(bombTrackerEnabled));
-    if (bombTrackerEnabled) {
-      invoke("start_bomb_tracker").then(() => addLog("info", "[BombTracker] Started")).catch((e) => addLog("error", `[BombTracker] Start failed: ${e}`));
-    } else {
-      invoke("stop_bomb_tracker").catch(() => {});
-    }
-  }, [bombTrackerEnabled]);
-
-  const lastBombEventRef = useRef(0);
-  useEffect(() => {
-    if (!bombTrackerEnabled) return;
-    let unlisten;
-    (async () => {
-      const { listen } = await import("@tauri-apps/api/event");
-      unlisten = await listen("bomb-planted", (e) => {
-        const now = Date.now();
-        if (now - lastBombEventRef.current < 45000) return;
-        lastBombEventRef.current = now;
-        const d = e.payload;
-        const ts = new Date(d.epochMs).toLocaleTimeString();
-        addLog("match", `[BombTracker] Spike planted at ${ts} (monitor: ${d.monitor.w}x${d.monitor.h})`);
-        if (localStorage.getItem("notifications_enabled") !== "false") {
-          const map = currentMatchMapRef.current;
-          pushNotification({
-            id: `bomb-${now}`,
-            type: "bomb-planted",
-            mapName: map?.displayName || null,
-            mapImage: map?.listViewIcon || map?.splash || null,
-            totalMs: 45000,
-            startTime: now,
-          });
-        }
-      });
-    })();
-    return () => { if (unlisten) unlisten(); };
-  }, [bombTrackerEnabled]);
 
   useEffect(() => {
     localStorage.setItem("discord_rpc", String(discordRpc));
@@ -648,7 +611,7 @@ export default function App() {
           const enemyScore = myTeam === "Blue" ? (redTeam?.RoundsWon ?? 0) : (blueTeam?.RoundsWon ?? 0);
           const modeUrl = match.GameMode || "";
           const queueId = match.MatchmakingData?.QueueID || match.QueueID || "";
-          const MODE_NAMES = { competitive: "Competitive", unrated: "Unrated", deathmatch: "Deathmatch", spikerush: "Spike Rush", swiftplay: "Swiftplay", ggteam: "Escalation", hurm: "Team Deathmatch", premier: "Premier", newmap: "New Map", snowball: "Snowball Fight", onefa: "Replication", skirmish2v2: "Skirmish 2v2", valaram: "All Random One Site", custom: "Custom" };
+          const MODE_NAMES = { competitive: "Competitive", unrated: "Unrated", deathmatch: "Deathmatch", spikerush: "Spike Rush", swiftplay: "Swiftplay", ggteam: "Escalation", hurm: "Team Deathmatch", premier: "Premier", newmap: "New Map", snowball: "Snowball Fight", onefa: "Replication", skirmish2v2: "Skirmish 2v2", valaram: "All Random One Site", dodgeball: "Knockout", custom: "Custom" };
           const modeKey = Object.keys(MODE_NAMES).find(k => queueId === k || modeUrl.includes(k));
           const mode = modeKey ? MODE_NAMES[modeKey] : (queueId || "Custom");
           rpcMatchInfoRef.current = { allyScore, enemyScore, mode, isDeathmatch: mode === "Deathmatch" };
@@ -1295,6 +1258,11 @@ export default function App() {
             />
             </motion.div>
           )}
+          {activeTab === "loadout" && devTab && (
+            <motion.div key="loadout" className="flex-1 flex min-h-0" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15, ease: "easeOut" }}>
+            <LoadoutPage connected={status === "connected"} />
+            </motion.div>
+          )}
           {activeTab === "party" && (
             <motion.div key="party" className="flex-1 flex min-h-0" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15, ease: "easeOut" }}>
             <PartyPage connected={status === "connected"} addLog={addLog} onRefresh={confirmRefresh} />
@@ -1316,8 +1284,6 @@ export default function App() {
               onAutoUnqueueChange={setAutoUnqueue}
               autoRequeue={autoRequeue}
               onAutoRequeueChange={setAutoRequeue}
-              bombTrackerEnabled={bombTrackerEnabled}
-              onBombTrackerEnabledChange={setBombTrackerEnabled}
             />
             </motion.div>
           )}

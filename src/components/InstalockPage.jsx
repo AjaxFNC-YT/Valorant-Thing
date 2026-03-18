@@ -53,6 +53,22 @@ const AGENT_SILHOUETTE = (
 
 const NONE_AGENT = { uuid: "none", displayName: "None", displayIcon: null };
 
+const CUSTOM_AGENTS = [
+  {
+    uuid: "7c8a4701-4de6-9355-b254-e09bc2a34b72",
+    displayName: "Miks",
+    displayIcon: "/agents/miks.png",
+    role: { displayName: "Controller", displayIcon: "https://media.valorant-api.com/agents/roles/4ee40330-ecdd-4f2f-98a8-eb1243428373/displayicon.png" },
+    isPlayableCharacter: true,
+  },
+];
+
+function mergeCustomAgents(apiAgents) {
+  const existingIds = new Set(apiAgents.map(a => a.uuid.toLowerCase()));
+  const toAdd = CUSTOM_AGENTS.filter(c => !existingIds.has(c.uuid.toLowerCase()));
+  return [...apiAgents, ...toAdd];
+}
+
 const CONFIG_KEY = "instalock-config";
 const PROFILES_KEY = "instalock-profiles";
 const ACTIVE_PROFILE_KEY = "instalock-active-profile";
@@ -136,7 +152,7 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
       fetch("https://valorant-api.com/v1/agents?isPlayableCharacter=true").then(r => r.json()),
       fetch("https://valorant-api.com/v1/maps").then(r => r.json()),
     ]).then(([agentsRes, mapsRes]) => {
-      const sorted = (agentsRes.data || []).sort((a, b) => a.displayName.localeCompare(b.displayName));
+      const sorted = mergeCustomAgents(agentsRes.data || []).sort((a, b) => a.displayName.localeCompare(b.displayName));
       setAgents(sorted);
       const playable = (mapsRes.data || []).filter(m => !EXCLUDED_MAPS.includes(m.displayName));
       setMaps(playable);

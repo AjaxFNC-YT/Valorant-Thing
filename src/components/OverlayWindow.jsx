@@ -5,6 +5,16 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCached, setCache } from "../matchCache";
 
 const AGENT_URL = "https://valorant-api.com/v1/agents?isPlayableCharacter=true";
+
+const CUSTOM_AGENTS = [
+  {
+    uuid: "7c8a4701-4de6-9355-b254-e09bc2a34b72",
+    displayName: "Miks",
+    displayIcon: "/agents/miks.png",
+    role: { displayName: "Controller" },
+    isPlayableCharacter: true,
+  },
+];
 const TIERS_URL = "https://valorant-api.com/v1/competitivetiers";
 const MAPS_URL = "https://valorant-api.com/v1/maps";
 const POLL_INTERVAL = 2000;
@@ -43,6 +53,10 @@ export default function OverlayWindow() {
     fetch(AGENT_URL).then(r => r.json()).then(res => {
       const m = {};
       (res.data || []).forEach(a => { m[a.uuid.toLowerCase()] = a; });
+      for (const ca of CUSTOM_AGENTS) {
+        const key = ca.uuid.toLowerCase();
+        if (!m[key]) m[key] = ca;
+      }
       setAgents(m);
     }).catch(() => {});
     fetch(TIERS_URL).then(r => r.json()).then(res => {
@@ -80,7 +94,7 @@ export default function OverlayWindow() {
 
       const modeUrl = match.GameMode || match.Mode || "";
       const queueId = match.MatchmakingData?.QueueID || match.QueueID || "";
-      const MODE_NAMES = { competitive: "Competitive", unrated: "Unrated", deathmatch: "Deathmatch", spikerush: "Spike Rush", swiftplay: "Swiftplay", ggteam: "Escalation", hurm: "Team Deathmatch", premier: "Premier", newmap: "New Map", snowball: "Snowball Fight", onefa: "Replication", skirmish2v2: "Skirmish 2v2", valaram: "All Random One Site", custom: "Custom" };
+      const MODE_NAMES = { competitive: "Competitive", unrated: "Unrated", deathmatch: "Deathmatch", spikerush: "Spike Rush", swiftplay: "Swiftplay", ggteam: "Escalation", hurm: "Team Deathmatch", premier: "Premier", newmap: "New Map", snowball: "Snowball Fight", onefa: "Replication", skirmish2v2: "Skirmish 2v2", valaram: "All Random One Site", dodgeball: "Knockout", custom: "Custom" };
       const modeKey = Object.keys(MODE_NAMES).find(k => queueId === k || modeUrl.includes(k));
       const modeName = modeKey ? MODE_NAMES[modeKey] : (queueId || "Custom");
       setMatchInfo({ mode: modeName, server: match.GamePodID || "" });
@@ -399,7 +413,7 @@ function PlayerRow({ player, agents, tiers, isSelf }) {
   return (
     <div className={`flex items-center gap-2 px-2 py-1.5 rounded-lg border ${isSelf ? "bg-val-red/10 border-val-red/30" : "bg-base-700/40 border-border/20"}`}>
       <div className="w-8 h-8 rounded-md bg-base-600 overflow-hidden shrink-0 flex items-center justify-center">
-        {agent?.displayIconSmall ? <img src={agent.displayIconSmall} alt="" className="w-full h-full object-cover" /> : <span className="text-text-muted text-[9px]">?</span>}
+        {(agent?.displayIconSmall || agent?.displayIcon) ? <img src={agent.displayIconSmall || agent.displayIcon} alt="" className="w-full h-full object-cover" /> : <span className="text-text-muted text-[9px]">?</span>}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1">

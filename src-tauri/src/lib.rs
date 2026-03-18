@@ -8,7 +8,6 @@ use tauri::{
 mod riot;
 mod discord;
 mod cloud;
-mod bomb_tracker;
 
 type SharedState = Arc<Mutex<riot::ConnectionState>>;
 type DiscordShared = Arc<Mutex<discord::DiscordState>>;
@@ -430,6 +429,30 @@ async fn get_chat_participants(state: tauri::State<'_, SharedState>, cid: String
 }
 
 #[tauri::command]
+async fn get_loadout(state: tauri::State<'_, SharedState>) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::get_loadout(&state))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn set_loadout(state: tauri::State<'_, SharedState>, loadout_json: String) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::set_loadout(&state, &loadout_json))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn get_owned_items(state: tauri::State<'_, SharedState>, item_type_id: String) -> Result<String, String> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || riot::get_owned_items(&state, &item_type_id))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
 async fn start_custom_game_match(state: tauri::State<'_, SharedState>) -> Result<String, String> {
     let state = Arc::clone(&state);
     tauri::async_runtime::spawn_blocking(move || riot::start_custom_game_match(&state))
@@ -814,6 +837,9 @@ pub fn run() {
             get_chat_participants,
             enter_queue,
             leave_queue,
+            get_loadout,
+            set_loadout,
+            get_owned_items,
             xmpp_connect,
             xmpp_disconnect,
             xmpp_poll,
@@ -823,9 +849,6 @@ pub fn run() {
             get_app_version,
             show_window_no_focus,
             read_game_log,
-            bomb_tracker::start_bomb_tracker,
-            bomb_tracker::stop_bomb_tracker,
-            bomb_tracker::is_bomb_tracker_running,
             cloud::cloud_save,
             cloud::cloud_load,
         ])

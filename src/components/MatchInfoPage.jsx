@@ -4,6 +4,15 @@ import { motion } from "framer-motion";
 import { getCached, setCache } from "../matchCache";
 
 const AGENT_MAP_URL = "https://valorant-api.com/v1/agents?isPlayableCharacter=true";
+const CUSTOM_AGENTS = [
+  {
+    uuid: "7c8a4701-4de6-9355-b254-e09bc2a34b72",
+    displayName: "Miks",
+    displayIcon: "/agents/miks.png",
+    role: { displayName: "Controller" },
+    isPlayableCharacter: true,
+  },
+];
 const noAnim = () => localStorage.getItem("disable_animations") === "true";
 const T0 = { duration: 0 };
 const COMP_TIERS_URL = "https://valorant-api.com/v1/competitivetiers";
@@ -34,6 +43,10 @@ export default function MatchInfoPage({ splooshimaApiKey, splooshimaAvailable, p
         (res.data || []).forEach((a) => {
           map[a.uuid.toLowerCase()] = a;
         });
+        for (const ca of CUSTOM_AGENTS) {
+          const key = ca.uuid.toLowerCase();
+          if (!map[key]) map[key] = ca;
+        }
         setAgents(map);
       })
       .catch(() => {});
@@ -75,7 +88,7 @@ export default function MatchInfoPage({ splooshimaApiKey, splooshimaAvailable, p
 
       const modeUrl = match.GameMode || match.Mode || "";
       const queueId = match.MatchmakingData?.QueueID || match.QueueID || "";
-      const MODE_NAMES = { competitive: "Competitive", unrated: "Unrated", deathmatch: "Deathmatch", spikerush: "Spike Rush", swiftplay: "Swiftplay", ggteam: "Escalation", hurm: "Team Deathmatch", premier: "Premier", newmap: "New Map", snowball: "Snowball Fight", onefa: "Replication", skirmish2v2: "Skirmish 2v2", valaram: "All Random One Site", custom: "Custom" };
+      const MODE_NAMES = { competitive: "Competitive", unrated: "Unrated", deathmatch: "Deathmatch", spikerush: "Spike Rush", swiftplay: "Swiftplay", ggteam: "Escalation", hurm: "Team Deathmatch", premier: "Premier", newmap: "New Map", snowball: "Snowball Fight", onefa: "Replication", skirmish2v2: "Skirmish 2v2", valaram: "All Random One Site", dodgeball: "Knockout", custom: "Custom" };
       const modeKey = Object.keys(MODE_NAMES).find(k => queueId === k || modeUrl.includes(k));
       const modeName = modeKey ? MODE_NAMES[modeKey] : (queueId || "Custom");
 
