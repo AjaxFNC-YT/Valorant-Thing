@@ -15,6 +15,7 @@ fn get_local_creds(state: &Mutex<ConnectionState>) -> Result<(u16, String), Stri
     ))
 }
 
+
 fn get_glz_creds(state: &Mutex<ConnectionState>) -> Result<(String, String, String, String, String, String), String> {
     let s = state.lock().map_err(|e| e.to_string())?;
     if !s.connected {

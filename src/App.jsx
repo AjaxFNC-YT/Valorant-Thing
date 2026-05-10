@@ -37,6 +37,56 @@ function parseGamePod(podId) {
   return podId.split(".").pop()?.split("-").slice(0, 2).join(" ") || podId;
 }
 
+const MODE_NAMES = {
+  competitive: "Competitive",
+  unrated: "Unrated",
+  deathmatch: "Deathmatch",
+  spikerush: "Spike Rush",
+  swiftplay: "Swiftplay",
+  ggteam: "Escalation",
+  hurm: "Team Deathmatch",
+  premier: "Premier",
+  newmap: "New Map",
+  snowball: "Snowball Fight",
+  onefa: "Replication",
+  skirmish2v2: "Skirmish: 2v2",
+  skirmishascension1v1: "Skirmish: Ascension 1v1",
+  skirmishascension2v2: "Skirmish: Ascension 2v2",
+  valaram: "All Random One Site",
+  dodgeball: "Knockout",
+  custom: "Custom",
+};
+
+function resolveModeName(queueId = "", modeUrl = "") {
+  const key = Object.keys(MODE_NAMES).find((k) => queueId === k || modeUrl.includes(k));
+  return key ? MODE_NAMES[key] : (queueId || "Custom");
+}
+
+function normalizeMenuVideoConfig(config) {
+  if (!config || typeof config !== "object") return null;
+
+  if (Array.isArray(config.replacedFiles)) {
+    return {
+      sourceBackupPath: config.sourceBackupPath || config.backupPath || "",
+      replacedFiles: config.replacedFiles
+        .filter((file) => file?.destPath)
+        .map((file) => ({
+          destPath: file.destPath,
+          hash: file.hash || "",
+        })),
+    };
+  }
+
+  if (config.destPath) {
+    return {
+      sourceBackupPath: config.backupPath || "",
+      replacedFiles: [{ destPath: config.destPath, hash: config.hash || "" }],
+    };
+  }
+
+  return null;
+}
+
 const CUSTOM_VARS = ['--base-900','--base-800','--base-700','--base-600','--base-500','--base-400','--border','--border-light','--val-red','--val-red-dark','--accent-blue','--accent-blue-dark'];
 
 function hexToRgb(hex) {
@@ -232,7 +282,7 @@ export default function App() {
   const creatingWindowRef = useRef(false);
 
   useEffect(() => {
-    const EXCLUDED = ["The Range", "Basic Training", "Skirmish A", "Skirmish B", "Skirmish C"];
+    const EXCLUDED = ["The Range", "Basic Training"];
     fetch("https://valorant-api.com/v1/maps").then(r => r.json()).then(res => {
       const lookup = {};
       (res.data || []).forEach(m => { if (m.mapUrl) lookup[m.mapUrl.toLowerCase()] = m; });
@@ -558,13 +608,20 @@ export default function App() {
         addLog("error", `[Loadout] PD loadout check failed: ${errMsg}`);
       }
       try {
-        const raw = localStorage.getItem("menu_video_config");
+const raw = localStorage.getItem("menu_video_config");
         if (raw) {
-          const cfg = JSON.parse(raw);
-          const currentHash = await invoke("compute_file_hash", { path: cfg.destPath });
-          if (currentHash !== cfg.hash) {
-            await invoke("force_copy_file", { source: cfg.backupPath, dest: cfg.destPath });
-            addLog("info", "[Video] Menu video was reverted by game — restored custom video");
+          const cfg = normalizeMenuVideoConfig(JSON.parse(raw));
+          if (cfg?.sourceBackupPath && Array.isArray(cfg.replacedFiles)) {
+            let restoredAny = false;
+            for (const file of cfg.replacedFiles) {
+              const currentHash = await invoke("compute_file_hash", { path: file.destPath }).catch(() => "");
+              if (!currentHash || currentHash === file.hash) continue;
+              await invoke("force_copy_file", { source: cfg.sourceBackupPath, dest: file.destPath });
+              restoredAny = true;
+            }
+            if (restoredAny) {
+              addLog("info", "[Video] Menu videos were reverted by game, so the custom replacements were restored");
+            }
           }
         }
       } catch {}
@@ -611,9 +668,7 @@ export default function App() {
           const enemyScore = myTeam === "Blue" ? (redTeam?.RoundsWon ?? 0) : (blueTeam?.RoundsWon ?? 0);
           const modeUrl = match.GameMode || "";
           const queueId = match.MatchmakingData?.QueueID || match.QueueID || "";
-          const MODE_NAMES = { competitive: "Competitive", unrated: "Unrated", deathmatch: "Deathmatch", spikerush: "Spike Rush", swiftplay: "Swiftplay", ggteam: "Escalation", hurm: "Team Deathmatch", premier: "Premier", newmap: "New Map", snowball: "Snowball Fight", onefa: "Replication", skirmish2v2: "Skirmish 2v2", valaram: "All Random One Site", dodgeball: "Knockout", custom: "Custom" };
-          const modeKey = Object.keys(MODE_NAMES).find(k => queueId === k || modeUrl.includes(k));
-          const mode = modeKey ? MODE_NAMES[modeKey] : (queueId || "Custom");
+          const mode = resolveModeName(queueId, modeUrl);
           rpcMatchInfoRef.current = { allyScore, enemyScore, mode, isDeathmatch: mode === "Deathmatch" };
 
           if (mode === "Deathmatch" && notifiedMatchRef.current !== matchId && localStorage.getItem("notifications_enabled") !== "false") {
@@ -931,7 +986,7 @@ export default function App() {
   useEffect(() => {
     if (status !== "connected") return;
     let cancelled = false;
-    const PREFETCH_INTERVAL = 3000;
+    const PREFETCH_INTERVAL = 250; // 250ms
 
     const prefetch = async () => {
       if (cancelled) return;

@@ -29,13 +29,21 @@ const QUEUES = [
   { id: "hurm", label: "Team Deathmatch" }, 
   { id: "premier", label: "Premier" },
   { id: "ggteam", label: "Escalation" },
-  { id: "skirmish2v2", label: "Skirmish 2v2" },
+  { id: "skirmish2v2", label: "Skirmish: 2v2" },
+  { id: "skirmishascension1v1", label: "Skirmish: Ascension 1v1" },
+  { id: "skirmishascension2v2", label: "Skirmish: Ascension 2v2" },
   { id: "onefa", label: "Replication" },
   { id: "snowball", label: "Snowball Fight" },
   { id: "valaram", label: "All Random One Site" },
   { id: "dodgeball", label: "Knockout" },
   { id: "custom", label: "Custom Game" },
 ];
+
+const QUEUE_NAMES = {
+  skirmish2v2: "Skirmish: 2v2",
+  skirmishascension1v1: "Skirmish: Ascension 1v1",
+  skirmishascension2v2: "Skirmish: Ascension 2v2",
+};
 
 const PREMIER_DIVISIONS = [
   { id: 0, name: "Unranked", icon: "—", color: "#888" },
@@ -178,6 +186,11 @@ function CustomSelect({ value, onChange, options, renderOption }) {
 }
 
 const inputClass = "w-full px-2.5 py-1.5 bg-base-800 border border-border rounded-lg text-xs font-body text-text-primary placeholder:text-text-muted/40 outline-none focus:border-val-red/60 transition-colors";
+
+function getQueueLabel(queueId) {
+  if (QUEUE_NAMES[queueId]) return QUEUE_NAMES[queueId];
+  return QUEUES.find((q) => q.id === queueId)?.label || queueId || "None";
+}
 
 const apiCache = {};
 async function fetchApi(endpoint) {

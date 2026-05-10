@@ -13,9 +13,28 @@ const QUEUES = [
   { id: "hurm", label: "Team Deathmatch" },
   { id: "ggteam", label: "Escalation" },
   { id: "spikerush", label: "Spike Rush" },
-  { id: "dodgeball", label: "Knockout" },
-  { id: "premier", label: "Premier" },
+  { id: "skirmish2v2", label: "Skirmish: 2v2" },
+  { id: "skirmishascension1v1", label: "Skirmish: Ascension 1v1" },
+  { id: "skirmishascension2v2", label: "Skirmish: Ascension 2v2" },
 ];
+
+const MODE_NAMES = {
+  BombGameMode: "Standard",
+  DeathmatchGameMode: "Deathmatch",
+  GunGameTeamsGameMode: "Escalation",
+  QuickBombGameMode: "Spike Rush",
+  OneForAll_GameMode: "Replication",
+  Swiftplay_EoRCredits_GameMode: "Swiftplay",
+  SwiftPlayGameMode: "Swiftplay",
+  HURM_GameMode: "Team Deathmatch",
+  SnowballGameMode: "Snowball Fight",
+  NewMapGameMode: "New Map",
+  skirmish2v2: "Skirmish: 2v2",
+  skirmishascension1v1: "Skirmish: Ascension 1v1",
+  skirmishascension2v2: "Skirmish: Ascension 2v2",
+};
+
+const normalizeModeKey = (mode) => String(mode || "").split("/").pop()?.split(".")[0]?.toLowerCase() || "";
 
 const POLL_INTERVAL = 3000;
 
@@ -234,7 +253,7 @@ export default function PartyPage({ connected, addLog, onRefresh }) {
   };
 
   const isCustom = party?.state === "CUSTOM_GAME_SETUP";
-  const currentQueueLabel = isCustom ? "Custom" : (QUEUES.find(q => q.id === party?.queue_id)?.label || party?.queue_id || "Unknown");
+  const currentQueueLabel = isCustom ? "Custom" : (QUEUES.find(q => q.id === normalizeModeKey(party?.queue_id))?.label || QUEUES.find(q => q.id === party?.queue_id)?.label || party?.queue_id || "Unknown");
 
   useEffect(() => {
     if (isCustom && !customConfigs) fetchCustomConfigs();
@@ -487,12 +506,6 @@ export default function PartyPage({ connected, addLog, onRefresh }) {
       )}
 
       {isCustom && isLeader && customConfigs && (() => {
-        const MODE_NAMES = {
-          BombGameMode: "Standard", DeathmatchGameMode: "Deathmatch", GunGameTeamsGameMode: "Escalation",
-          QuickBombGameMode: "Spike Rush", OneForAll_GameMode: "Replication",
-          Swiftplay_EoRCredits_GameMode: "Swiftplay", SwiftPlayGameMode: "Swiftplay",
-          HURM_GameMode: "Team Deathmatch", SnowballGameMode: "Snowball Fight", NewMapGameMode: "New Map",
-        };
         const MAP_NAMES = {
           Duality: "Bind", Triad: "Haven", Bonsai: "Split", Port: "Icebox", Foxtrot: "Breeze",
           Canyon: "Fracture", Pitt: "Pearl", Jam: "Lotus", Juliett: "Sunset", Infinity: "Abyss",
@@ -502,7 +515,7 @@ export default function PartyPage({ connected, addLog, onRefresh }) {
         const MODE_PRIORITY = ["Swiftplay", "Standard", "Deathmatch", "Spike Rush", "Escalation", "Replication", "Team Deathmatch"];
         const SERVER_NAMES = { dallas: "US Central (Texas)", atlanta: "US Central (Georgia)", chicago: "US Central (Illinois)", ashburn: "US East (N. Virginia)", norcal: "US West (N. California)", oregon: "US West (Oregon)" };
 
-        const getModeName = (m) => { const f = m.split("/").pop()?.split(".")[0] || m; if (MODE_NAMES[f]) return MODE_NAMES[f]; if (f.includes("HURM")) return "Team Deathmatch"; return f.replace(/_GameMode|GameMode/gi, "").replace(/_/g, " ").trim(); };
+        const getModeName = (m) => { const f = normalizeModeKey(m); if (MODE_NAMES[f]) return MODE_NAMES[f]; if (f.includes("hurm")) return "Team Deathmatch"; return f.replace(/_gamemode|gamemode/gi, "").replace(/_/g, " ").trim(); };
         const getModeIcon = (m) => { const cls = m.split("/").pop()?.split(".")[0] || ""; return apiModes?.[cls]?.displayIcon || null; };
         const getModeBg = (m) => { const cls = m.split("/").pop()?.split(".")[0] || ""; return apiModes?.[cls]?.listViewIconTall || null; };
         const getMapName = (m) => { const raw = m.split("/").pop() || m; return apiMaps?.[m]?.displayName || MAP_NAMES[raw] || raw; };
@@ -872,4 +885,3 @@ function MemberCard({ member, isLeader, isMe, onKick }) {
     </div>
   );
 }
-

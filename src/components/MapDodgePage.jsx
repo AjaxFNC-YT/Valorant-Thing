@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 
-const EXCLUDED_MAPS = ["The Range", "Basic Training", "Skirmish A", "Skirmish B", "Skirmish C"];
+const EXCLUDED_MAPS = ["The Range", "Basic Training"];
 const DM_MAPS = new Set(["Kasbah", "Glitch", "Drift", "Piazza", "District"]);
+const SKIRMISH_MAPS = new Set(["Skirmish A", "Skirmish B", "Skirmish C"]);
 const CONFIG_KEY = "mapdodge-config";
 const noAnim = () => localStorage.getItem("disable_animations") === "true";
 const T0 = { duration: 0 };
@@ -142,7 +143,8 @@ export default function MapDodgePage({ onActiveChange, onBlacklistChange, connec
           Click maps to blacklist — auto-dodge when matched
         </p>
         {(() => {
-          const standard = filteredMaps.filter(m => !DM_MAPS.has(m.displayName));
+          const standard = filteredMaps.filter(m => !DM_MAPS.has(m.displayName) && !SKIRMISH_MAPS.has(m.displayName));
+          const skirmish = filteredMaps.filter(m => SKIRMISH_MAPS.has(m.displayName));
           const dm = filteredMaps.filter(m => DM_MAPS.has(m.displayName));
           let idx = 0;
           return (
@@ -156,6 +158,25 @@ export default function MapDodgePage({ onActiveChange, onBlacklistChange, connec
                   </div>
                   <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
                     {standard.map(map => {
+                      const i = idx++;
+                      return (
+                        <motion.div key={map.uuid} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={noAnim() ? T0 : { duration: 0.15, delay: Math.min(i * 0.03, 0.3) }}>
+                        <MapDodgeCard map={map} blacklisted={blacklist.has(map.mapUrl)} onClick={() => toggleMap(map.mapUrl)} />
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {skirmish.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted/60"><path d="M12 2v20M2 12h20" /><circle cx="12" cy="12" r="4" /></svg>
+                    <span className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider">Skirmish Maps</span>
+                    <div className="flex-1 h-px bg-border/50" />
+                  </div>
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
+                    {skirmish.map(map => {
                       const i = idx++;
                       return (
                         <motion.div key={map.uuid} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={noAnim() ? T0 : { duration: 0.15, delay: Math.min(i * 0.03, 0.3) }}>

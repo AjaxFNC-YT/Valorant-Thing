@@ -3,8 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
 import { exportVtFile, readVtFile } from "../cloud";
 
-const EXCLUDED_MAPS = ["The Range", "Basic Training", "Skirmish A", "Skirmish B", "Skirmish C"];
+const EXCLUDED_MAPS = ["The Range", "Basic Training"];
 const DM_MAPS = new Set(["Kasbah", "Glitch", "Drift", "Piazza", "District"]);
+const SKIRMISH_MAPS = new Set(["Skirmish A", "Skirmish B", "Skirmish C"]);
 const ROLE_ORDER = { "Duelist": 0, "Initiator": 1, "Controller": 2, "Sentinel": 3 };
 const ROLES = ["Duelist", "Initiator", "Controller", "Sentinel"];
 const ROLE_ICONS = {
@@ -52,6 +53,23 @@ const AGENT_SILHOUETTE = (
 );
 
 const NONE_AGENT = { uuid: "none", displayName: "None", displayIcon: null };
+
+const SKIRMISH_ALLOWED = {
+  "jett": "Tailwind",
+  "waylay": "Refract",
+  "chamber": "Rendezvous",
+  "cypher": "Cyber Cage",
+  "omen": "Shrouded Step",
+  "phoenix": "Curveball",
+  "yoru": "FAKEOUT",
+  "iso": "Contingency",
+  "sage": "Barrier Orb",
+  "raze": "Blast Pack",
+  "vyse": "Arc Rose",
+  "kay/o": "FLASH/drive",
+  "breach": "Flashpoint",
+  "veto": "Crosscut",
+};
 
 const CUSTOM_AGENTS = [
   {
@@ -111,6 +129,41 @@ function restorePerMap(sorted, perMap) {
     }
   }
   return restored;
+}
+
+function normalizeAbilityName(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function isSkirmishMap(map) {
+  return !!map && SKIRMISH_MAPS.has(map.displayName);
+}
+
+function getSkirmishAbilityName(agent) {
+  if (!agent) return null;
+  return SKIRMISH_ALLOWED[agent.displayName.toLowerCase()] || null;
+}
+
+function getAllowedAgentsForMap(agents, map) {
+  if (!isSkirmishMap(map)) return agents;
+  return agents.filter((agent) => !!getSkirmishAbilityName(agent));
+}
+
+function getAbilityIconsForAgent(agent, map) {
+  if (!agent || agent.uuid === "none") return [];
+  const abilities = Array.isArray(agent.abilities) ? agent.abilities.filter((ability) => ability?.displayIcon) : [];
+  if (!isSkirmishMap(map)) return abilities.slice(0, 4);
+
+  const wanted = normalizeAbilityName(getSkirmishAbilityName(agent));
+  if (!wanted) return [];
+  const match = abilities.find((ability) => normalizeAbilityName(ability.displayName) === wanted);
+  return match ? [match] : [];
+}
+
+function isAgentAllowedForMap(agent, map) {
+  if (!agent || agent.uuid === "none") return true;
+  if (!isSkirmishMap(map)) return true;
+  return !!getSkirmishAbilityName(agent);
 }
 
 export default function InstalockPage({ onActiveChange, onConfigChange, connected }) {
@@ -390,11 +443,14 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
     });
   }, [agents, search, ownedAgents, roleFilter]);
 
+  const selectedMapAllowedAgents = useMemo(() => getAllowedAgentsForMap(filteredAgents, selectedMap), [filteredAgents, selectedMap]);
+
   const handleAgentClick = (agent) => {
     if (!isOwned(agent)) return;
     if (subTab === "all") {
       setSelectedAgent(selectedAgent?.uuid === agent.uuid ? null : agent);
     } else if (selectedMap) {
+      if (isSkirmishMap(selectedMap) && !getSkirmishAbilityName(agent)) return;
       setPerMapSelections((prev) => {
         const current = prev[selectedMap.uuid];
         if (current?.uuid === agent.uuid) {
@@ -420,6 +476,10 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
   };
 
   const getAgentForMap = (mapUuid) => perMapSelections[mapUuid] || selectedAgent;
+  const getMapAgent = (map) => {
+    const selected = perMapSelections[map.uuid] || selectedAgent;
+    return isAgentAllowedForMap(selected, map) ? selected : NONE_AGENT;
+  };
 
   if (loading) {
     return (
@@ -636,15 +696,18 @@ export default function InstalockPage({ onActiveChange, onConfigChange, connecte
           <PerMapView
             agents={agents}
             filteredAgents={filteredAgents}
+            selectedMapAgents={selectedMapAllowedAgents}
             maps={maps}
             search={search}
             selectedMap={selectedMap}
+            selectedAgent={selectedAgent}
             onMapSelect={(map) => { setSelectedMap(map); setSearch(""); }}
             onMapBack={() => { setSelectedMap(null); setSearch(""); }}
             perMapSelections={perMapSelections}
             onAgentClick={handleAgentClick}
             onNoneClick={handleNoneClick}
             getAgentForMap={getAgentForMap}
+            getMapAgent={getMapAgent}
             isOwned={isOwned}
             roleFilter={roleFilter}
           />
@@ -804,15 +867,16 @@ function NoneButton({ selected, onClick }) {
   );
 }
 
-function PerMapView({ agents, filteredAgents, maps, search, selectedMap, onMapSelect, onMapBack, perMapSelections, onAgentClick, onNoneClick, getAgentForMap, isOwned, roleFilter }) {
+function PerMapView({ agents, filteredAgents, selectedMapAgents, maps, search, selectedMap, selectedAgent, onMapSelect, onMapBack, perMapSelections, onAgentClick, onNoneClick, getAgentForMap, getMapAgent, isOwned, roleFilter }) {
   if (!selectedMap) {
     const q = search.toLowerCase();
     const filtered = search.trim()
       ? maps.filter((m) => m.displayName.toLowerCase().includes(q))
       : maps;
 
-    const standard = filtered.filter(m => !DM_MAPS.has(m.displayName));
+    const standard = filtered.filter(m => !DM_MAPS.has(m.displayName) && !SKIRMISH_MAPS.has(m.displayName));
     const dm = filtered.filter(m => DM_MAPS.has(m.displayName));
+    const skirmish = filtered.filter(m => SKIRMISH_MAPS.has(m.displayName));
     let idx = 0;
 
     return (
@@ -829,7 +893,26 @@ function PerMapView({ agents, filteredAgents, maps, search, selectedMap, onMapSe
                 const i = idx++;
                 return (
                   <motion.div key={map.uuid} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={noAnim() ? T0 : { duration: 0.15, delay: Math.min(i * 0.03, 0.3) }}>
-                  <MapCard map={map} selectedAgent={getAgentForMap(map.uuid)} isDefault={!perMapSelections[map.uuid] && !!getAgentForMap(map.uuid)} onClick={() => onMapSelect(map)} />
+                  <MapCard map={map} selectedAgent={getMapAgent(map)} isDefault={!perMapSelections[map.uuid] && !!getMapAgent(map)} onClick={() => onMapSelect(map)} />
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {skirmish.length > 0 && (
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted/60"><path d="M12 2v20M2 12h20" /><circle cx="12" cy="12" r="4" /></svg>
+              <span className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider">Skirmish</span>
+              <div className="flex-1 h-px bg-border/50" />
+            </div>
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
+              {skirmish.map(map => {
+                const i = idx++;
+                return (
+                  <motion.div key={map.uuid} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={noAnim() ? T0 : { duration: 0.15, delay: Math.min(i * 0.03, 0.3) }}>
+                  <MapCard map={map} selectedAgent={getMapAgent(map)} isDefault={!perMapSelections[map.uuid] && !!getMapAgent(map)} onClick={() => onMapSelect(map)} />
                   </motion.div>
                 );
               })}
@@ -861,6 +944,8 @@ function PerMapView({ agents, filteredAgents, maps, search, selectedMap, onMapSe
 
   const currentSelection = perMapSelections[selectedMap.uuid];
   const isNoneSelected = currentSelection?.uuid === "none";
+  const selectableAgents = isSkirmishMap(selectedMap) ? selectedMapAgents : filteredAgents;
+  const currentMapAgent = isAgentAllowedForMap(currentSelection || selectedAgent, selectedMap) ? (currentSelection || selectedAgent) : NONE_AGENT;
 
   return (
     <div>
@@ -876,26 +961,31 @@ function PerMapView({ agents, filteredAgents, maps, search, selectedMap, onMapSe
         <span className="text-text-primary text-xs font-display font-medium">
           {selectedMap.displayName}
         </span>
+        {isSkirmishMap(selectedMap) && (
+          <span className="text-[10px] font-display uppercase tracking-wider text-text-muted ml-2">
+            Restricted pool
+          </span>
+        )}
         {currentSelection && (
           <span className={`text-xs font-display ml-auto ${isNoneSelected ? "text-text-muted" : "text-accent-blue"}`}>
-            {currentSelection.displayName}
+            {currentMapAgent?.displayName || currentSelection.displayName}
           </span>
         )}
       </div>
       {roleFilter !== "all" ? (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1.5">
           <NoneButton selected={isNoneSelected} onClick={onNoneClick} />
-          {filteredAgents.map(agent => (
-            <AgentCard key={agent.uuid} agent={agent} selected={currentSelection?.uuid === agent.uuid} onClick={() => onAgentClick(agent)} owned={isOwned(agent)} />
+          {selectableAgents.map(agent => (
+            <AgentCard key={agent.uuid} agent={agent} map={selectedMap} selected={currentSelection?.uuid === agent.uuid} onClick={() => onAgentClick(agent)} owned={isOwned(agent)} />
           ))}
         </div>
       ) : (
         <div className="space-y-4">
           <div className="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1.5">
-            <NoneButton selected={isNoneSelected} onClick={onNoneClick} />
+          <NoneButton selected={isNoneSelected} onClick={onNoneClick} />
           </div>
           {ROLES.map(role => {
-            const roleAgents = filteredAgents.filter(a => a.role?.displayName === role);
+            const roleAgents = selectableAgents.filter(a => a.role?.displayName === role);
             if (!roleAgents.length) return null;
             return (
               <div key={role}>
@@ -906,7 +996,7 @@ function PerMapView({ agents, filteredAgents, maps, search, selectedMap, onMapSe
                 </div>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1.5">
                   {roleAgents.map(agent => (
-                    <AgentCard key={agent.uuid} agent={agent} selected={currentSelection?.uuid === agent.uuid} onClick={() => onAgentClick(agent)} owned={isOwned(agent)} />
+                    <AgentCard key={agent.uuid} agent={agent} map={selectedMap} selected={currentSelection?.uuid === agent.uuid} onClick={() => onAgentClick(agent)} owned={isOwned(agent)} />
                   ))}
                 </div>
               </div>
@@ -918,7 +1008,8 @@ function PerMapView({ agents, filteredAgents, maps, search, selectedMap, onMapSe
   );
 }
 
-function AgentCard({ agent, selected, onClick, owned = true }) {
+function AgentCard({ agent, map = null, selected, onClick, owned = true }) {
+  const abilityIcons = getAbilityIconsForAgent(agent, map);
   return (
     <div className="relative">
       <button
@@ -955,16 +1046,26 @@ function AgentCard({ agent, selected, onClick, owned = true }) {
         }`}>
           {agent.displayName}
         </span>
+        {abilityIcons.length > 0 && (
+          <div className="flex items-center justify-center gap-1 mt-0.5 flex-nowrap px-1 overflow-hidden">
+            {abilityIcons.map((ability) => (
+              <div key={ability.slot} className="w-3.5 h-3.5 shrink-0" title={ability.displayName}>
+                <img src={ability.displayIcon} alt={ability.displayName} className="w-full h-full object-contain" loading="lazy" />
+              </div>
+            ))}
+          </div>
+        )}
       </button>
     </div>
   );
 }
 
 function MapCard({ map, selectedAgent, isDefault, onClick }) {
+  const abilityIcons = getAbilityIconsForAgent(selectedAgent, map);
   return (
     <button
       onClick={onClick}
-      className="group relative overflow-hidden rounded-lg border border-border hover:border-border-light transition-all duration-150 text-left h-16 w-full"
+      className="group relative overflow-hidden rounded-lg border border-border hover:border-border-light transition-all duration-150 text-left min-h-16 w-full"
     >
       <div className="absolute inset-0 bg-base-600 overflow-hidden">
         {map.listViewIcon && (
@@ -977,9 +1078,9 @@ function MapCard({ map, selectedAgent, isDefault, onClick }) {
         )}
       </div>
       <div className="absolute inset-0 bg-base-900/50" />
-      <div className="relative h-full flex items-center gap-3 px-3">
+      <div className="relative h-full flex items-start gap-3 px-3 py-2">
         {selectedAgent && selectedAgent.uuid !== "none" ? (
-          <div className="w-9 h-9 rounded-lg overflow-hidden shrink-0 bg-base-600">
+          <div className="w-9 h-9 rounded-lg overflow-hidden shrink-0 bg-base-600 mt-0.5">
             <img
               src={selectedAgent.displayIcon}
               alt={selectedAgent.displayName}
@@ -987,27 +1088,38 @@ function MapCard({ map, selectedAgent, isDefault, onClick }) {
             />
           </div>
         ) : selectedAgent?.uuid === "none" ? (
-          <div className="w-9 h-9 rounded-lg shrink-0 bg-base-500/30 flex items-center justify-center">
+          <div className="w-9 h-9 rounded-lg shrink-0 bg-base-500/30 flex items-center justify-center mt-0.5">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted/50">
               <circle cx="12" cy="12" r="10" />
               <path d="M4.93 4.93l14.14 14.14" />
             </svg>
           </div>
         ) : (
-          <div className="w-9 h-9 rounded-lg shrink-0 bg-base-500/30 flex items-center justify-center text-text-muted/20">
+          <div className="w-9 h-9 rounded-lg shrink-0 bg-base-500/30 flex items-center justify-center text-text-muted/20 mt-0.5">
             {AGENT_SILHOUETTE}
           </div>
         )}
-        <div className="min-w-0">
-          <p className="text-sm font-display font-semibold text-text-primary leading-tight">
-            {map.displayName}
-          </p>
-          {selectedAgent ? (
-            <p className="text-xs font-body text-text-muted leading-tight mt-0.5">
-              {selectedAgent.displayName}
-              {!isDefault && <span className="text-text-muted/50"> (override)</span>}
-              {isDefault && <span className="text-text-muted/50"> (default)</span>}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 min-w-0">
+            <p className="text-sm font-display font-semibold text-text-primary leading-tight truncate">
+              {map.displayName}
             </p>
+            {selectedAgent && selectedAgent.uuid !== "none" && abilityIcons.length > 0 && (
+              <div className="flex items-center gap-1 shrink-0">
+                {abilityIcons.map((ability) => (
+                  <img key={ability.slot} src={ability.displayIcon} alt={ability.displayName} title={ability.displayName} className="w-4 h-4 object-contain" loading="lazy" />
+                ))}
+              </div>
+            )}
+          </div>
+          {selectedAgent ? (
+            <>
+              <p className="text-xs font-body text-text-muted leading-tight mt-0.5">
+                {selectedAgent.displayName}
+                {!isDefault && <span className="text-text-muted/50"> (override)</span>}
+                {isDefault && <span className="text-text-muted/50"> (default)</span>}
+              </p>
+            </>
           ) : (
             <p className="text-xs font-body text-text-muted/40 leading-tight mt-0.5 italic">
               No agent

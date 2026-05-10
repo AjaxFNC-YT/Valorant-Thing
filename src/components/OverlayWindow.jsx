@@ -94,7 +94,7 @@ export default function OverlayWindow() {
 
       const modeUrl = match.GameMode || match.Mode || "";
       const queueId = match.MatchmakingData?.QueueID || match.QueueID || "";
-      const MODE_NAMES = { competitive: "Competitive", unrated: "Unrated", deathmatch: "Deathmatch", spikerush: "Spike Rush", swiftplay: "Swiftplay", ggteam: "Escalation", hurm: "Team Deathmatch", premier: "Premier", newmap: "New Map", snowball: "Snowball Fight", onefa: "Replication", skirmish2v2: "Skirmish 2v2", valaram: "All Random One Site", dodgeball: "Knockout", custom: "Custom" };
+      const MODE_NAMES = { competitive: "Competitive", unrated: "Unrated", deathmatch: "Deathmatch", spikerush: "Spike Rush", swiftplay: "Swiftplay", ggteam: "Escalation", hurm: "Team Deathmatch", premier: "Premier", newmap: "New Map", snowball: "Snowball Fight", onefa: "Replication", skirmish2v2: "Skirmish: 2v2", skirmishascension1v1: "Skirmish: Ascension 1v1", skirmishascension2v2: "Skirmish: Ascension 2v2", valaram: "All Random One Site", dodgeball: "Knockout", custom: "Custom" };
       const modeKey = Object.keys(MODE_NAMES).find(k => queueId === k || modeUrl.includes(k));
       const modeName = modeKey ? MODE_NAMES[modeKey] : (queueId || "Custom");
       setMatchInfo({ mode: modeName, server: match.GamePodID || "" });

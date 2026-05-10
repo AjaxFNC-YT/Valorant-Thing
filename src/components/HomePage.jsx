@@ -291,7 +291,7 @@ export default function HomePage({ connected, player, refreshKey, onRefresh }) {
             const kdaText = kdaVal ? `${kdaVal} KDA` : "Perfect KDA";
 
             const q = m.queueId || "";
-            const MODE_NAMES = { competitive: "Competitive", unrated: "Unrated", deathmatch: "Deathmatch", spikerush: "Spike Rush", swiftplay: "Swiftplay", ggteam: "Escalation", hurm: "Team Deathmatch", premier: "Premier", newmap: "New Map", snowball: "Snowball Fight", onefa: "Replication", skirmish2v2: "Skirmish 2v2", valaram: "All Random One Site", dodgeball: "Knockout", custom: "Custom" };
+            const MODE_NAMES = { competitive: "Competitive", unrated: "Unrated", deathmatch: "Deathmatch", spikerush: "Spike Rush", swiftplay: "Swiftplay", ggteam: "Escalation", hurm: "Team Deathmatch", premier: "Premier", newmap: "New Map", snowball: "Snowball Fight", onefa: "Replication", skirmish2v2: "Skirmish: 2v2", skirmishascension1v1: "Skirmish: Ascension 1v1", skirmishascension2v2: "Skirmish: Ascension 2v2", valaram: "All Random One Site", dodgeball: "Knockout", custom: "Custom" };
             const modeName = MODE_NAMES[q] || (q ? q.charAt(0).toUpperCase() + q.slice(1) : "Custom");
             const isDeathmatch = q === "deathmatch";
             const isEscalation = q === "ggteam" || q === "dodgeball";
